@@ -1,10 +1,10 @@
 const SMATECH_CONFIG = {
-  API_URL: "https://script.google.com/macros/s/MASUKKAN_URL_DEPLOYMENT_ANDA/exec",
+  API_URL: "https://script.google.com/macros/s/AKfycbzw80dy-9qXAHVHNN_YN5-3RhUAQW3ZXQGqsX_6UkUfg1igDXCLGLNIGieT-v8Yd08ssQ/exec",
   OFFLINE_QUEUE_KEY: "smatech_pending_results_v1"
 };
 
 function isApiReady() {
-  return Boolean(SMATECH_CONFIG.API_URL && !SMATECH_CONFIG.API_URL.includes("MASUKKAN_URL_DEPLOYMENT_ANDA"));
+  return Boolean(SMATECH_CONFIG.API_URL && !SMATECH_CONFIG.API_URL.includes("https://script.google.com/macros/s/AKfycbzw80dy-9qXAHVHNN_YN5-3RhUAQW3ZXQGqsX_6UkUfg1igDXCLGLNIGieT-v8Yd08ssQ/exec"));
 }
 
 async function sha256Hex(text) {
