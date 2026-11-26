@@ -1,0 +1,55 @@
+const SMATECH_CONFIG = {
+  API_URL: "https://script.google.com/macros/s/MASUKKAN_URL_DEPLOYMENT_ANDA/exec",
+  OFFLINE_QUEUE_KEY: "smatech_pending_results_v1"
+};
+
+function isApiReady() {
+  return Boolean(SMATECH_CONFIG.API_URL && !SMATECH_CONFIG.API_URL.includes("MASUKKAN_URL_DEPLOYMENT_ANDA"));
+}
+
+async function sha256Hex(text) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function smatechApi(action, payload = {}) {
+  if (!isApiReady()) {
+    throw new Error("URL Web App Google Apps Script belum diisi.");
+  }
+  const response = await fetch(SMATECH_CONFIG.API_URL, {
+    method: "POST",
+    // text/plain menghindari preflight OPTIONS yang ditolak Apps Script
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify({ action, ...payload })
+  });
+  if (!response.ok) {
+    throw new Error("Koneksi gagal dengan status HTTP " + response.status);
+  }
+  const result = await response.json();
+  if (!result.ok) {
+    throw new Error(result.message || "Permintaan API gagal.");
+  }
+  return result;
+}
+
+function queueExamResultOffline(resultPayload) {
+  const queue = JSON.parse(localStorage.getItem(SMATECH_CONFIG.OFFLINE_QUEUE_KEY) || "[]");
+  queue.push(resultPayload);
+  localStorage.setItem(SMATECH_CONFIG.OFFLINE_QUEUE_KEY, JSON.stringify(queue));
+}
+
+async function flushOfflineExamQueue() {
+  if (!isApiReady()) return;
+  const queue = JSON.parse(localStorage.getItem(SMATECH_CONFIG.OFFLINE_QUEUE_KEY) || "[]");
+  if (!queue.length) return;
+
+  const remaining = [];
+  for (const item of queue) {
+    try {
+      await smatechApi("submitExamResult", { result: item });
+    } catch (_) {
+      remaining.push(item);
+    }
+  }
+  localStorage.setItem(SMATECH_CONFIG.OFFLINE_QUEUE_KEY, JSON.stringify(remaining));
+}
