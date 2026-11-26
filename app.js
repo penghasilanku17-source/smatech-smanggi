@@ -454,37 +454,31 @@
     const user = ($('teacherEmailInput')?.value || '').trim().toLowerCase();
     const pass = $('teacherPassInput')?.value || '';
     if (!user || !pass) { showErr('Email/username dan kata sandi wajib diisi.'); return; }
-    // 1) Coba login via Google Sheets (sheet Users) terlebih dahulu.
-    if (isApiReady()) {
-      try {
-        const passwordHash = await sha256Hex(pass);
-        const res = await smatechApi('loginGuru', { email: user, passwordHash: passwordHash });
-        if (res && res.user) {
-          const u = res.user;
-          const initials = String(u.nama || 'GR').split(' ').filter(Boolean).slice(0, 2).map((w) => (w[0] || '')).join('').toUpperCase();
-          loginTeacher({
-            id: u.user_id || 'GURU-01',
-            initials: initials || 'GR',
-            name: u.nama || 'Guru',
-            email: u.email || user,
-            role: u.role || 'Guru Informatika'
-          });
-          return;
-        }
-        if (res && res.reason) { showErr(res.reason); return; }
-        showErr('Akun guru tidak ditemukan atau kata sandi salah.');
-        return;
-      } catch (err) {
-        // Jaringan/server error -> lanjut ke fallback lokal (akun demo).
-      }
+    // Login hanya melalui Google Sheets (sheet Users).
+    if (!isApiReady()) {
+      showErr('Server belum dikonfigurasi. Hubungi administrator.');
+      return;
     }
-
-    // 2) Fallback lokal (akun demo hardcoded).
-    const teacher = INFORMATICS_TEACHERS.find((t) => t.email.toLowerCase() === user || t.email.split('@')[0].toLowerCase() === user);
-    if (!teacher) { showErr('Akun guru tidak ditemukan.'); return; }
-    const okPass = (await sha256Hex(pass)) === (await sha256Hex(DEFAULT_PASSWORD));
-    if (!okPass) { showErr('Kata sandi salah.'); return; }
-    loginTeacher(teacher);
+    try {
+      const passwordHash = await sha256Hex(pass);
+      const res = await smatechApi('loginGuru', { email: user, passwordHash: passwordHash });
+      if (res && res.user) {
+        const u = res.user;
+        const initials = String(u.nama || 'GR').split(' ').filter(Boolean).slice(0, 2).map((w) => (w[0] || '')).join('').toUpperCase();
+        loginTeacher({
+          id: u.user_id || 'GURU-01',
+          initials: initials || 'GR',
+          name: u.nama || 'Guru',
+          email: u.email || user,
+          role: u.role || 'Guru Informatika'
+        });
+        return;
+      }
+      if (res && res.reason) { showErr(res.reason); return; }
+      showErr('Akun guru tidak ditemukan atau kata sandi salah.');
+    } catch (err) {
+      showErr('Tidak dapat terhubung ke server. Pastikan Apps Script sudah di-deploy ulang.');
+    }
   }
 
   function manualCloudSync() { syncDashboardFromCloud(false); }
@@ -985,6 +979,105 @@
     parseSmartPasteText(true);
     renderGridEditorRows();
     showToast('Template 40 soal contoh dimuat.', 'success');
+  }
+
+  // --- Import Soal dari DOCX (format SOAL + 5 JAWABAN, kolom Jawaban 1/0) ---
+  function parseDocxImportHtml(html) {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const rows = Array.from(doc.querySelectorAll('table tr'));
+    const questions = [];
+    let current = null;
+
+    const flush = () => {
+      if (current && String(current.question || '').trim() && current.options.length >= 4) {
+        const opts = [];
+        for (let k = 0; k < 5; k++) opts.push(current.options[k] ? current.options[k].text : '');
+        const ansIdx = current.options.findIndex((o) => o.correct);
+        const answer = ansIdx >= 0 && ansIdx < 5 ? LETTERS[ansIdx] : 'A';
+        questions.push({ question: String(current.question).trim(), options: opts, answer: answer, level: 'C2' });
+      }
+      current = null;
+    };
+
+    rows.forEach((tr) => {
+      const tds = Array.from(tr.querySelectorAll('td,th')).map((td) => String(td.textContent || '').trim());
+      if (tds.length < 3) return;
+      const jenis = String(tds[1] || '').toUpperCase();
+      const isi = tds[2] || '';
+      const jawaban = String(tds[3] || '').trim();
+      if (jenis === 'SOAL') {
+        flush();
+        current = { question: isi, options: [] };
+      } else if (jenis === 'JAWABAN' && current) {
+        current.options.push({ text: isi, correct: jawaban === '1' });
+      }
+    });
+    flush();
+    return questions;
+  }
+
+  async function importDocxFromFile(evt) {
+    const file = evt && evt.target && evt.target.files && evt.target.files[0];
+    if (!file) return;
+    if (typeof mammoth === 'undefined') { showToast('Library mammoth belum termuat (perlu internet).', 'error'); return; }
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const result = await mammoth.convertToHtml({ arrayBuffer: arrayBuffer });
+      const questions = parseDocxImportHtml(result.value || '');
+      if (!questions.length) { showToast('Tidak ada soal terbaca dari DOCX.', 'warning'); return; }
+      const lines = questions.map((q) => [q.question].concat(q.options).concat([q.answer, q.level]).join(' | '));
+      const ta = $('smartPasteTextarea');
+      if (ta) ta.value = lines.join('\n');
+      if ($('inputBatchTitle') && !$('inputBatchTitle').value.trim()) {
+        $('inputBatchTitle').value = 'Impor Soal ' + questions.length + ' Butir';
+      }
+      parseSmartPasteText(true);
+      renderGridEditorRows();
+      showToast(questions.length + ' soal berhasil diimpor. Lanjutkan Import Kisi-Kisi (XLSX) untuk Level Kognitif.', 'success');
+    } catch (err) {
+      showToast('Gagal membaca DOCX: ' + (err && err.message ? err.message : err), 'error');
+    }
+    evt.target.value = '';
+  }
+
+  // --- Import Kisi-Kisi dari XLSX (mengisi Level Kognitif per No Soal) ---
+  function importKisiFromFile(evt) {
+    const file = evt && evt.target && evt.target.files && evt.target.files[0];
+    if (!file) return;
+    if (typeof XLSX === 'undefined') { showToast('Library XLSX belum termuat (perlu internet).', 'error'); return; }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const wb = XLSX.read(e.target.result, { type: 'array' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+        const headerIdx = rows.findIndex((r) => r.some((c) => String(c).trim().toLowerCase() === 'level kognitif'));
+        if (headerIdx === -1) { showToast('Kolom "Level Kognitif" tidak ditemukan di kisi-kisi.', 'warning'); return; }
+        const headers = rows[headerIdx].map((h) => String(h).trim());
+        const cNo = headers.indexOf('No');
+        const cLevel = headers.indexOf('Level Kognitif');
+        if (cNo === -1 || cLevel === -1) { showToast('Kolom No / Level Kognitif tidak ditemukan.', 'warning'); return; }
+        let assigned = 0;
+        for (let r = headerIdx + 1; r < rows.length; r++) {
+          const row = rows[r];
+          const no = parseInt(row[cNo], 10);
+          const lv = String(row[cLevel]).trim().toUpperCase();
+          if (!no || LEVELS.indexOf(lv) === -1) continue;
+          const i = no - 1;
+          if (i >= 0 && i < runtime.draft.length) {
+            runtime.draft[i].level = lv;
+            assigned++;
+          }
+        }
+        renderGridEditorRows();
+        evaluateDraftValidity();
+        showToast('Level kognitif ' + assigned + ' soal diimpor dari kisi-kisi.', 'success');
+      } catch (err) {
+        showToast('Gagal membaca XLSX: ' + (err && err.message ? err.message : err), 'error');
+      }
+    };
+    reader.readAsArrayBuffer(file);
+    evt.target.value = '';
   }
 
   function resetInputDraft() {
@@ -2097,7 +2190,7 @@
     renderBankBatches, setBankSort, deleteBatch, openBatchInspector, toggleInspectorKeys,
     createTokenFromBatch, quickCreateTokenFromInspector,
     loadSample40Template, resetInputDraft, evaluateDraftValidity, switchInputSubTab,
-    parseSmartPasteText, updateDraftCell, commitNewBatch40,
+    parseSmartPasteText, updateDraftCell, commitNewBatch40, importDocxFromFile, importKisiFromFile,
     generateShuffledVariants, selectActiveVariant, openPrintableExamModal, exportVariantCsv,
     refreshMixStatus, saveCombinedBatch40, exportMixedCsv,
     openImportStudentsModal, fillSampleImportStudents, processStudentBulkImport,
