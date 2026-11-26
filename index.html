@@ -98,17 +98,19 @@
 
         <!-- Panel Guru -->
         <div id="authTeacherPanel" class="space-y-5">
-          <div>
-            <h3 class="text-sm font-extrabold text-slate-900">Masuk Cepat sebagai Guru</h3>
-            <p class="text-[11px] text-slate-500 mb-3">Klik salah satu akun demo di bawah.</p>
-            <div id="quickTeacherGrid" class="grid grid-cols-1 sm:grid-cols-2 gap-2"></div>
-          </div>
-          <form id="teacherManualLoginForm" class="border-t border-slate-100 pt-4 space-y-3">
-            <div class="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Masuk Manual</div>
+          <form id="teacherManualLoginForm" class="space-y-3">
+            <div class="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Masuk sebagai Guru</div>
             <input id="teacherEmailInput" type="text" autocomplete="username" placeholder="Email / username guru"
               class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-brand-600" />
-            <input id="teacherPassInput" type="password" autocomplete="current-password" placeholder="Kata sandi"
-              class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-brand-600" />
+            <div class="relative">
+              <input id="teacherPassInput" type="password" autocomplete="current-password" placeholder="Kata sandi"
+                class="w-full px-3.5 py-2.5 pr-11 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-brand-600" />
+              <button type="button" onclick="toggleTeacherPassword()" tabindex="-1" aria-label="Tampilkan/sembunyikan kata sandi"
+                class="absolute right-1.5 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-slate-400 hover:text-slate-600">
+                <i id="teacherPassEyeShow" data-lucide="eye" class="w-4 h-4"></i>
+                <i id="teacherPassEyeHide" data-lucide="eye-off" class="w-4 h-4 hidden"></i>
+              </button>
+            </div>
             <div id="teacherLoginErrorBox" class="hidden px-3 py-2 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold"></div>
             <button type="submit"
               class="w-full py-2.5 rounded-xl bg-brand-900 hover:bg-brand-800 text-white text-sm font-bold transition">
@@ -703,5 +705,18 @@
 
   <!-- Aplikasi logika -->
   <script src="app.js"></script>
+  <script>
+    function toggleTeacherPassword() {
+      const inp = document.getElementById('teacherPassInput');
+      const show = document.getElementById('teacherPassEyeShow');
+      const hide = document.getElementById('teacherPassEyeHide');
+      if (!inp) return;
+      const reveal = inp.type === 'password';
+      inp.type = reveal ? 'text' : 'password';
+      if (show) show.classList.toggle('hidden', !reveal);
+      if (hide) hide.classList.toggle('hidden', reveal);
+      inp.focus();
+    }
+  </script>
 </body>
 </html>
