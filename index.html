@@ -1,1825 +1,707 @@
-/**
- * SMATECH (SMANGGI TECHNOLOGY) - Frontend Logic
- * SMAN 1 Gondanglegi - Tim Guru Informatika
- */
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SMATECH — SMAN 1 Gondanglegi</title>
 
-const SMATECH_CONFIG = {
-  API_URL: "https://script.google.com/macros/s/AKfycbzw80dy-9qXAHVHNN_YN5-3RhUAQW3ZXQGqsX_6UkUfg1igDXCLGLNIGieT-v8Yd08ssQ/exec",
-  STORAGE_KEY: "smatech_db_v2_4",
-  OFFLINE_QUEUE_KEY: "smatech_pending_results_v1"
-};
+  <!-- Tailwind CSS v4 (browser) -->
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
 
-function isApiReady() {
-  const url = String(SMATECH_CONFIG.API_URL || "").trim();
-  return (
-    url.startsWith("https://script.google.com/macros/s/") &&
-    url.endsWith("/exec") &&
-    !url.includes("MASUKKAN_URL")
-  );
-}
-
-async function sha256Hex(text) {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(String(text)));
-  return Array.from(new Uint8Array(digest))
-    .map(b => b.toString(16).padStart(2, "0"))
-    .join("");
-}
-
-async function smatechApi(action, payload = {}) {
-  if (!isApiReady()) {
-    throw new Error("URL Web App Google Apps Script belum dikonfigurasi.");
-  }
-  const response = await fetch(SMATECH_CONFIG.API_URL, {
-    method: "POST",
-    headers: { "Content-Type": "text/plain;charset=utf-8" },
-    body: JSON.stringify({ action, ...payload })
-  });
-  if (!response.ok) {
-    throw new Error("Gagal terhubung ke server (HTTP " + response.status + ")");
-  }
-  const result = await response.json();
-  if (!result.ok) {
-    throw new Error(result.message || "Operasi gagal diproses oleh server.");
-  }
-  return result;
-}
-
-// =========================================================================
-// STATE & SEED DATA
-// =========================================================================
-function buildSeedQuestions(prefix, topic, baseCode) {
-  const levels = ["C1", "C2", "C3", "C4"];
-  const keys = ["A", "B", "C", "D", "E"];
-  return Array.from({ length: 40 }, (_, i) => {
-    const num = i + 1;
-    const kunci = keys[i % 5];
-    return {
-      question_id: `${baseCode}-Q${num}`,
-      batch_id: baseCode,
-      nomor: num,
-      pertanyaan: `[${prefix} #${num}] Analisis penerapan konsep ${topic} pada studi kasus sistem komputer dan pemrosesan data modern nomor ${num}. Manakah pernyataan yang paling tepat?`,
-      opsi_a: `Implementasi struktur data & logika ${topic} tahap ${num}.1`,
-      opsi_b: `Optimasi efisiensi memori dan kompleksitas waktu ${num}.2`,
-      opsi_c: `Protokol validasi integritas dan keamanan informasi ${num}.3`,
-      opsi_d: `Dekomposisi masalah menjadi sub-modul algoritmik ${num}.4`,
-      opsi_e: `Evaluasi dampak sosial dan etika digital terkait kasus ${num}.5`,
-      kunci,
-      level_kognitif: levels[i % 4]
-    };
-  });
-}
-
-function createInitialDb() {
-  return {
-    teachers: [
-      { id: "GURU-01", initials: "HA", name: "Hardian Aji Kusuma, S.Kom.", email: "kusumaaji262@gmail.com", role: "Koordinator Informatika" },
-      { id: "GURU-02", initials: "RK", name: "Rina Kusumawardani, S.Pd.", email: "rina@smanggi.sch.id", role: "Guru Informatika Kelas X" },
-      { id: "GURU-03", initials: "DP", name: "Dimas Prasetyo, S.Kom.", email: "dimas@smanggi.sch.id", role: "Guru Informatika Kelas XI" }
-    ],
-    batches: [
-      {
-        batch_id: "BATCH-2026-01",
-        judul: "Asesmen Sumatif Berpikir Komputasional & Algoritma",
-        kelas: "Kelas X",
-        topik: "Berpikir Komputasional",
-        pembuat_id: "GURU-01",
-        pembuat_nama: "Hardian Aji Kusuma, S.Kom.",
-        tanggal: "2026-10-12",
-        jumlah_soal: 40,
-        questions: buildSeedQuestions("BK-X", "Berpikir Komputasional", "BATCH-2026-01")
-      },
-      {
-        batch_id: "BATCH-2026-02",
-        judul: "Evaluasi Jaringan Komputer, Topologi & Keamanan Siber",
-        kelas: "Kelas X",
-        topik: "Jaringan Komputer & Internet",
-        pembuat_id: "GURU-02",
-        pembuat_nama: "Rina Kusumawardani, S.Pd.",
-        tanggal: "2026-11-03",
-        jumlah_soal: 40,
-        questions: buildSeedQuestions("JKI-X", "Jaringan Komputer", "BATCH-2026-02")
-      },
-      {
-        batch_id: "BATCH-2026-03",
-        judul: "Penilaian Tengah Semester Pemrograman Python & Struktur Data",
-        kelas: "Kelas XI",
-        topik: "Algoritma & Pemrograman",
-        pembuat_id: "GURU-03",
-        pembuat_nama: "Dimas Prasetyo, S.Kom.",
-        tanggal: "2026-11-18",
-        jumlah_soal: 40,
-        questions: buildSeedQuestions("AP-XI", "Pemrograman Python", "BATCH-2026-03")
-      }
-    ],
-    students: [
-      { nis: "261001", nama: "Nabila Putri Maharani", kelas: "X-1", status: "AKTIF" },
-      { nis: "261002", nama: "Ahmad Zaki Pratama", kelas: "X-1", status: "AKTIF" },
-      { nis: "261003", nama: "Siti Aisyah Rahmawati", kelas: "X-2", status: "AKTIF" },
-      { nis: "261004", nama: "Muhammad Rizky Fadillah", kelas: "X-2", status: "AKTIF" },
-      { nis: "261005", nama: "Citra Dewi Lestari", kelas: "X-3", status: "AKTIF" },
-      { nis: "261006", nama: "Bagas Saputra Wijaya", kelas: "X-4", status: "AKTIF" },
-      { nis: "262001", nama: "Anisa Nurul Hidayah", kelas: "XI-1", status: "AKTIF" },
-      { nis: "262002", nama: "Fajar Nugroho", kelas: "XI-2", status: "AKTIF" }
-    ],
-    tokens: [
-      {
-        token_code: "SMG26A",
-        judul_ujian: "Sumatif Informatika Kelas X",
-        batch_id: "BATCH-2026-01",
-        target_kelas: "KELAS_X",
-        durasi_menit: 60,
-        kkm: 75,
-        max_pelanggaran: 3,
-        acak_soal: true,
-        wajib_fullscreen: true,
-        tampil_nilai: true,
-        status: "AKTIF",
-        dibuat_oleh: "Hardian Aji Kusuma, S.Kom."
-      }
-    ],
-    results: []
-  };
-}
-
-let db = loadDb();
-let runtime = {
-  activeTeacher: null,
-  activeModule: "bank",
-  bankSort: "newest",
-  inspectedBatchId: null,
-  inspectorShowKeys: false,
-  variants: { A: [], B: [], C: [] },
-  activeVariantKey: "A",
-  draftQuestions: [],
-  cbtSession: null,
-  timerInterval: null,
-  lastCheatAt: 0
-};
-
-function loadDb() {
-  try {
-    const raw = localStorage.getItem(SMATECH_CONFIG.STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (parsed && Array.isArray(parsed.batches)) return parsed;
+  <style type="text/tailwindcss">
+    @theme {
+      --color-brand-50:  #eef2ff;
+      --color-brand-100: #e0e7ff;
+      --color-brand-200: #c7d2fe;
+      --color-brand-300: #a5b4fc;
+      --color-brand-400: #818cf8;
+      --color-brand-500: #6366f1;
+      --color-brand-600: #4f46e5;
+      --color-brand-700: #4338ca;
+      --color-brand-800: #3730a3;
+      --color-brand-900: #312e81;
+      --color-brand-950: #1e1b4b;
     }
-  } catch (_) {}
-  return createInitialDb();
-}
+  </style>
 
-function saveDb() {
-  try {
-    localStorage.setItem(SMATECH_CONFIG.STORAGE_KEY, JSON.stringify(db));
-  } catch (_) {}
-}
+  <style>
+    /* Kontainer cetak hanya tampil saat proses print */
+    @media screen { #printContainer { display: none; } }
+    @media print {
+      body > *:not(#printContainer) { display: none !important; }
+      #printContainer { display: block !important; }
+    }
+  </style>
+</head>
 
-// =========================================================================
-// UTILITIES (TOAST, MODAL, ICONS)
-// =========================================================================
-function renderIcons() {
-  if (window.lucide && typeof window.lucide.createIcons === "function") {
-    window.lucide.createIcons();
-  }
-}
+<body class="bg-slate-100 text-slate-900 antialiased min-h-screen">
 
-function showToast(message, type = "info") {
-  const stack = document.getElementById("toastStack");
-  if (!stack) return;
-  const styles = {
-    success: "bg-emerald-900 border-emerald-700 text-emerald-50",
-    error: "bg-rose-900 border-rose-700 text-rose-50",
-    warning: "bg-amber-900 border-amber-700 text-amber-50",
-    info: "bg-slate-900 border-slate-700 text-white"
-  };
-  const el = document.createElement("div");
-  el.className = `pointer-events-auto px-4 py-3 rounded-2xl border shadow-lg text-xs font-semibold flex items-center justify-between gap-3 transition-all ${styles[type] || styles.info}`;
-  el.innerHTML = `<span>${escapeHtml(message)}</span>`;
-  stack.appendChild(el);
-  setTimeout(() => el.remove(), 3800);
-}
+  <!-- ============ TOAST STACK ============ -->
+  <div id="toastStack" class="fixed top-4 right-4 z-[100] flex flex-col gap-2 w-[calc(100%-2rem)] max-w-sm pointer-events-none"></div>
 
-function escapeHtml(str) {
-  return String(str ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
+  <!-- ===================================================================== -->
+  <!-- VIEW 1 : AUTH GATE (Portal Guru & Siswa) -->
+  <!-- ===================================================================== -->
+  <div id="authGateView" class="min-h-screen flex flex-col bg-gradient-to-br from-slate-50 via-white to-indigo-50">
+    <header class="border-b border-slate-200 bg-white/70 backdrop-blur">
+      <div class="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between gap-3">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-2xl bg-brand-900 text-cyan-300 flex items-center justify-center font-extrabold shadow">
+            <i data-lucide="graduation-cap" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <h1 class="text-lg font-extrabold tracking-tight text-slate-900 leading-none">SMATECH</h1>
+            <p class="text-[11px] text-slate-500 font-semibold">SMANGGI TECHNOLOGY • SMAN 1 Gondanglegi</p>
+          </div>
+        </div>
+        <div id="cloudSyncPill" class="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full border border-slate-200 bg-white text-[11px] font-semibold text-slate-600">
+          <span class="w-2 h-2 rounded-full bg-slate-400"></span>
+          <span>Mode Lokal</span>
+        </div>
+      </div>
+    </header>
 
-function openModal(id) {
-  document.getElementById(id)?.classList.remove("hidden");
-  renderIcons();
-}
+    <main class="flex-1 w-full max-w-5xl mx-auto px-4 py-8 grid lg:grid-cols-2 gap-8 items-start">
+      <!-- Kiri: Hero + Statistik -->
+      <section class="space-y-6">
+        <div class="space-y-3">
+          <span class="inline-block px-3 py-1 rounded-full bg-brand-50 text-brand-800 border border-brand-200 text-[11px] font-extrabold uppercase tracking-wide">Platform Asesmen CBT</span>
+          <h2 class="text-3xl sm:text-4xl font-extrabold leading-tight text-slate-900">Asesmen Informatika<br />Berbasis Komputer</h2>
+          <p class="text-sm text-slate-600 leading-relaxed max-w-md">Bank soal 40-butir, generator paket acak A/B/C, penerbitan token 6-karakter, live proctoring anti-curang, dan analisis butir soal — terintegrasi Google Sheets.</p>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div class="p-4 rounded-2xl bg-white border border-slate-200 shadow-sm">
+            <div class="text-2xl font-extrabold text-brand-900" id="gateStatQuestions">0</div>
+            <div class="text-[11px] font-semibold text-slate-500">Butir Soal Tersimpan</div>
+          </div>
+          <div class="p-4 rounded-2xl bg-white border border-slate-200 shadow-sm">
+            <div class="text-2xl font-extrabold text-brand-900" id="gateStatStudents">0</div>
+            <div class="text-[11px] font-semibold text-slate-500">Siswa Terdaftar</div>
+          </div>
+        </div>
+      </section>
 
-function closeModal(id) {
-  document.getElementById(id)?.classList.add("hidden");
-}
+      <!-- Kanan: Kartu Login -->
+      <section class="bg-white rounded-3xl border border-slate-200 shadow-xl p-5 sm:p-6">
+        <div class="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-2xl mb-5">
+          <button type="button" id="segTeacherBtn" onclick="setAuthTab('teacher')"
+            class="py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold bg-brand-900 text-white shadow-xs transition flex items-center justify-center gap-2">
+            <i data-lucide="user-cog" class="w-4 h-4"></i> Guru
+          </button>
+          <button type="button" id="segStudentBtn" onclick="setAuthTab('student')"
+            class="py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold text-slate-600 hover:text-slate-900 transition flex items-center justify-center gap-2">
+            <i data-lucide="user" class="w-4 h-4"></i> Siswa
+          </button>
+        </div>
 
-function playBeep() {
-  try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = "sawtooth";
-    osc.frequency.value = 540;
-    gain.gain.value = 0.08;
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start();
-    setTimeout(() => { osc.stop(); ctx.close(); }, 220);
-  } catch (_) {}
-}
+        <!-- Panel Guru -->
+        <div id="authTeacherPanel" class="space-y-5">
+          <div>
+            <h3 class="text-sm font-extrabold text-slate-900">Masuk Cepat sebagai Guru</h3>
+            <p class="text-[11px] text-slate-500 mb-3">Klik salah satu akun demo di bawah.</p>
+            <div id="quickTeacherGrid" class="grid grid-cols-1 sm:grid-cols-2 gap-2"></div>
+          </div>
+          <form id="teacherManualLoginForm" class="border-t border-slate-100 pt-4 space-y-3">
+            <div class="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Masuk Manual</div>
+            <input id="teacherEmailInput" type="text" autocomplete="username" placeholder="Email / username guru"
+              class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-brand-600" />
+            <input id="teacherPassInput" type="password" autocomplete="current-password" placeholder="Kata sandi"
+              class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-brand-600" />
+            <div id="teacherLoginErrorBox" class="hidden px-3 py-2 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold"></div>
+            <button type="submit"
+              class="w-full py-2.5 rounded-xl bg-brand-900 hover:bg-brand-800 text-white text-sm font-bold transition">
+              Masuk
+            </button>
+          </form>
+        </div>
 
-// =========================================================================
-// 1. DUAL-MODE AUTHENTICATION PORTAL
-// =========================================================================
-function setAuthTab(tab) {
-  const isTeacher = tab === "teacher";
-  const tBtn = document.getElementById("segTeacherBtn");
-  const sBtn = document.getElementById("segStudentBtn");
-  const tPanel = document.getElementById("authTeacherPanel");
-  const sPanel = document.getElementById("authStudentPanel");
+        <!-- Panel Siswa -->
+        <div id="authStudentPanel" class="hidden space-y-4">
+          <div>
+            <h3 class="text-sm font-extrabold text-slate-900">Masuk Ujian Siswa</h3>
+            <p class="text-[11px] text-slate-500">Gunakan NIS dan kode token dari pengawas.</p>
+          </div>
+          <form id="studentCbtLoginForm" class="space-y-3">
+            <div>
+              <label class="block text-[11px] font-bold text-slate-500 mb-1">Nomor Induk Siswa (NIS)</label>
+              <input id="cbtNisInput" type="text" inputmode="numeric" placeholder="Contoh: 261001"
+                class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-600" />
+            </div>
+            <div id="studentLookupPreview" class="p-3.5 rounded-2xl border border-slate-200 bg-slate-50"></div>
+            <div>
+              <label class="block text-[11px] font-bold text-slate-500 mb-1">Kode Token Sesi</label>
+              <input id="cbtTokenCodeInput" type="text" placeholder="Contoh: SMG26A"
+                class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm font-mono uppercase tracking-widest focus:outline-none focus:ring-2 focus:ring-brand-600" />
+            </div>
+            <div id="studentLoginAlertBox" class="hidden px-3 py-2 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold"></div>
+            <button type="submit"
+              class="w-full py-2.5 rounded-xl bg-brand-900 hover:bg-brand-800 text-white text-sm font-bold transition">
+              Validasi & Masuk Ujian
+            </button>
+          </form>
+          <button type="button" onclick="fillQuickStudentDemo()"
+            class="w-full py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition">
+            Isi Contoh (NIS 261001 + Token SMG26A)
+          </button>
+        </div>
+      </section>
+    </main>
+  </div>
 
-  if (tBtn && sBtn) {
-    tBtn.className = isTeacher
-      ? "py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold bg-brand-900 text-white shadow-xs transition flex items-center justify-center gap-2"
-      : "py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold text-slate-600 hover:text-slate-900 transition flex items-center justify-center gap-2";
-    sBtn.className = !isTeacher
-      ? "py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold bg-brand-900 text-white shadow-xs transition flex items-center justify-center gap-2"
-      : "py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold text-slate-600 hover:text-slate-900 transition flex items-center justify-center gap-2";
-  }
-  tPanel?.classList.toggle("hidden", !isTeacher);
-  sPanel?.classList.toggle("hidden", isTeacher);
-  renderIcons();
-}
+  <!-- ===================================================================== -->
+  <!-- VIEW 2 : TEACHER WORKSPACE -->
+  <!-- ===================================================================== -->
+  <div id="teacherWorkspaceView" class="hidden min-h-screen">
+    <!-- Backdrop mobile -->
+    <div id="mobileSidebarBackdrop" class="fixed inset-0 z-30 bg-slate-900/60 backdrop-blur-sm hidden lg:hidden" onclick="toggleMobileSidebar(false)"></div>
 
-function renderAuthGate() {
-  const totalQ = db.batches.reduce((acc, b) => acc + (b.questions?.length || 0), 0);
-  const qEl = document.getElementById("gateStatQuestions");
-  const sEl = document.getElementById("gateStatStudents");
-  if (qEl) qEl.textContent = String(totalQ);
-  if (sEl) sEl.textContent = String(db.students.length);
-
-  const grid = document.getElementById("quickTeacherGrid");
-  if (grid) {
-    grid.innerHTML = db.teachers.map(t => `
-      <button type="button" onclick="quickLoginTeacher('${t.id}')"
-        class="p-3 rounded-2xl border border-slate-200 hover:border-indigo-500 hover:bg-indigo-50/50 text-left transition group">
-        <div class="flex items-center gap-2.5">
-          <div class="w-8 h-8 rounded-xl bg-brand-900 text-cyan-300 font-extrabold text-xs flex items-center justify-center shrink-0">
-            ${escapeHtml(t.initials || "GR")}
+    <div class="flex min-h-screen">
+      <!-- Sidebar -->
+      <aside id="teacherSidebar"
+        class="fixed inset-y-0 left-0 z-40 w-72 -translate-x-full transition-transform duration-200 lg:static lg:translate-x-0 lg:w-64 shrink-0 bg-slate-900 text-slate-200 flex flex-col">
+        <div class="p-4 border-b border-white/10 flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-brand-950 text-cyan-300 flex items-center justify-center font-extrabold">
+            <span id="topbarTeacherInitials">GR</span>
           </div>
           <div class="min-w-0">
-            <strong class="block text-xs font-extrabold text-slate-900 truncate group-hover:text-indigo-700">${escapeHtml(t.name)}</strong>
-            <span class="block text-[10px] text-slate-500 truncate">${escapeHtml(t.role)}</span>
+            <div id="topbarTeacherName" class="text-sm font-extrabold text-white truncate">Guru</div>
+            <div id="topbarTeacherRole" class="text-[10px] text-slate-400 truncate">Guru Informatika</div>
           </div>
         </div>
-      </button>
-    `).join("");
-  }
-}
 
-async function quickLoginTeacher(teacherId) {
-  const teacher = db.teachers.find(t => t.id === teacherId);
-  if (!teacher) return;
-  await enterTeacherWorkspace(teacher);
-}
+        <nav class="flex-1 overflow-y-auto p-3 space-y-1">
+          <button type="button" data-nav="bank" onclick="switchTeacherModule('bank')" class="sidebar-nav-btn w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold text-slate-300 hover:bg-white/10 hover:text-white transition">
+            <span class="flex items-center gap-2.5"><i data-lucide="library" class="w-4 h-4"></i>Bank Soal</span>
+            <span id="badgeBankCount" class="px-1.5 py-0.5 rounded-md bg-white/10 text-[10px] font-bold tabular-nums">0</span>
+          </button>
+          <button type="button" data-nav="input" onclick="switchTeacherModule('input')" class="sidebar-nav-btn w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold text-slate-300 hover:bg-white/10 hover:text-white transition">
+            <span class="flex items-center gap-2.5"><i data-lucide="file-input" class="w-4 h-4"></i>Input Batch</span>
+          </button>
+          <button type="button" data-nav="compose" onclick="switchTeacherModule('compose')" class="sidebar-nav-btn w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold text-slate-300 hover:bg-white/10 hover:text-white transition">
+            <span class="flex items-center gap-2.5"><i data-lucide="shuffle" class="w-4 h-4"></i>Rakit Ujian</span>
+          </button>
+          <button type="button" data-nav="students" onclick="switchTeacherModule('students')" class="sidebar-nav-btn w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold text-slate-300 hover:bg-white/10 hover:text-white transition">
+            <span class="flex items-center gap-2.5"><i data-lucide="users" class="w-4 h-4"></i>Data Siswa</span>
+            <span id="badgeStudentCount" class="px-1.5 py-0.5 rounded-md bg-white/10 text-[10px] font-bold tabular-nums">0</span>
+          </button>
+          <button type="button" data-nav="live" onclick="switchTeacherModule('live')" class="sidebar-nav-btn w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold text-slate-300 hover:bg-white/10 hover:text-white transition">
+            <span class="flex items-center gap-2.5"><i data-lucide="radio-tower" class="w-4 h-4"></i>Ujian Live</span>
+            <span id="badgeLiveActive" class="px-1.5 py-0.5 rounded-md bg-white/10 text-[10px] font-bold tabular-nums">0</span>
+          </button>
+          <button type="button" data-nav="results" onclick="switchTeacherModule('results')" class="sidebar-nav-btn w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold text-slate-300 hover:bg-white/10 hover:text-white transition">
+            <span class="flex items-center gap-2.5"><i data-lucide="bar-chart-3" class="w-4 h-4"></i>Hasil & Analisis</span>
+          </button>
+        </nav>
 
-async function handleManualTeacherLogin(e) {
-  if (e) e.preventDefault();
-  const email = (document.getElementById("teacherEmailInput")?.value || "").trim();
-  const password = (document.getElementById("teacherPassInput")?.value || "").trim();
-  const errBox = document.getElementById("teacherLoginErrorBox");
-  errBox?.classList.add("hidden");
-
-  if (!email || !password) {
-    if (errBox) {
-      errBox.textContent = "Email dan kata sandi wajib diisi.";
-      errBox.classList.remove("hidden");
-    }
-    return;
-  }
-
-  try {
-    if (isApiReady()) {
-      const passwordHash = await sha256Hex(password);
-      const res = await smatechApi("loginGuru", { email, passwordHash });
-      if (res.ok && res.user) {
-        const initials = String(res.user.nama || "GR")
-          .split(" ")
-          .slice(0, 2)
-          .map(w => w[0] || "")
-          .join("")
-          .toUpperCase();
-        await enterTeacherWorkspace({
-          id: res.user.user_id,
-          initials,
-          name: res.user.nama,
-          email: res.user.email,
-          role: res.user.role || "Guru Informatika"
-        });
-        return;
-      }
-    }
-
-    const localTeacher = db.teachers.find(
-      t => t.email.toLowerCase() === email.toLowerCase() && (password === "smanggi123" || password === "123456")
-    );
-    if (localTeacher) {
-      await enterTeacherWorkspace(localTeacher);
-      return;
-    }
-
-    throw new Error("Akun guru tidak ditemukan atau kata sandi salah.");
-  } catch (err) {
-    if (errBox) {
-      errBox.textContent = err.message || "Gagal masuk ke akun guru.";
-      errBox.classList.remove("hidden");
-    }
-  }
-}
-
-async function enterTeacherWorkspace(teacher) {
-  runtime.activeTeacher = teacher;
-  document.getElementById("authGateView")?.classList.add("hidden");
-  document.getElementById("studentCbtView")?.classList.add("hidden");
-  document.getElementById("teacherWorkspaceView")?.classList.remove("hidden");
-
-  const initEl = document.getElementById("topbarTeacherInitials");
-  const nameEl = document.getElementById("topbarTeacherName");
-  const roleEl = document.getElementById("topbarTeacherRole");
-  if (initEl) initEl.textContent = teacher.initials || "GR";
-  if (nameEl) nameEl.textContent = teacher.name;
-  if (roleEl) roleEl.textContent = teacher.role;
-
-  showToast(`Selamat datang, ${teacher.name}`, "success");
-  await manualCloudSync(true);
-  switchTeacherModule("bank");
-}
-
-async function manualCloudSync(silent = false) {
-  if (!isApiReady()) return;
-  try {
-    if (!silent) showToast("Menyinkronkan data dengan Google Sheets...", "info");
-    const cloud = await smatechApi("getDashboardData");
-    if (cloud.ok) {
-      if (Array.isArray(cloud.students) && cloud.students.length > 0) {
-        db.students = cloud.students.map(s => ({
-          nis: String(s.nis).trim(),
-          nama: String(s.nama).trim(),
-          kelas: String(s.kelas).trim(),
-          status: String(s.status || "AKTIF").trim().toUpperCase()
-        }));
-      }
-      if (Array.isArray(cloud.tokens) && cloud.tokens.length > 0) {
-        db.tokens = cloud.tokens.map(t => ({
-          ...t,
-          token_code: String(t.token_code).trim().toUpperCase(),
-          durasi_menit: Number(t.durasi_menit || 60),
-          kkm: Number(t.kkm || 75),
-          max_pelanggaran: Number(t.max_pelanggaran || 3),
-          acak_soal: String(t.acak_soal) !== "false" && t.acak_soal !== false,
-          wajib_fullscreen: String(t.wajib_fullscreen) !== "false" && t.wajib_fullscreen !== false,
-          tampil_nilai: String(t.tampil_nilai) !== "false" && t.tampil_nilai !== false,
-          status: String(t.status || "AKTIF").trim().toUpperCase()
-        }));
-      }
-      if (Array.isArray(cloud.results)) {
-        db.results = cloud.results.map(r => {
-          let parsedLogs = [];
-          let parsedAns = {};
-          try { parsedLogs = typeof r.log_pelanggaran_json === "string" ? JSON.parse(r.log_pelanggaran_json) : (r.log_pelanggaran || []); } catch (_) {}
-          try { parsedAns = typeof r.jawaban_json === "string" ? JSON.parse(r.jawaban_json) : (r.jawaban || {}); } catch (_) {}
-          return {
-            ...r,
-            skor: Number(r.skor || 0),
-            benar: Number(r.benar || 0),
-            salah: Number(r.salah || 0),
-            jumlah_pelanggaran: Number(r.jumlah_pelanggaran || 0),
-            log_pelanggaran: parsedLogs,
-            jawaban: parsedAns
-          };
-        });
-      }
-      if (Array.isArray(cloud.batches) && cloud.batches.length > 0) {
-        db.batches = cloud.batches.map(b => ({
-          ...b,
-          questions: (cloud.questions || [])
-            .filter(q => String(q.batch_id).trim() === String(b.batch_id).trim())
-            .sort((a, bq) => Number(a.nomor) - Number(bq.nomor))
-        }));
-      }
-      saveDb();
-      refreshAllTeacherViews();
-      if (!silent) showToast("Sinkronisasi Google Sheets berhasil.", "success");
-    }
-  } catch (err) {
-    if (!silent) showToast("Mode lokal aktif (Cloud belum merespons).", "warning");
-  }
-}
-
-function logoutToGate() {
-  runtime.activeTeacher = null;
-  document.getElementById("teacherWorkspaceView")?.classList.add("hidden");
-  document.getElementById("studentCbtView")?.classList.add("hidden");
-  document.getElementById("authGateView")?.classList.remove("hidden");
-  renderAuthGate();
-  renderIcons();
-}
-
-function launchStudentPortalFromTeacher() {
-  logoutToGate();
-  setAuthTab("student");
-  fillQuickStudentDemo();
-}
-
-// =========================================================================
-// 2. TEACHER WORKSPACE NAVIGATION & VIEWS
-// =========================================================================
-function toggleMobileSidebar(open) {
-  const sidebar = document.getElementById("teacherSidebar");
-  const backdrop = document.getElementById("mobileSidebarBackdrop");
-  if (!sidebar || !backdrop) return;
-  if (open) {
-    sidebar.classList.remove("-translate-x-full");
-    backdrop.classList.remove("hidden");
-  } else {
-    sidebar.classList.add("-translate-x-full");
-    backdrop.classList.add("hidden");
-  }
-}
-
-function switchTeacherModule(modKey) {
-  runtime.activeModule = modKey;
-  toggleMobileSidebar(false);
-
-  const titles = {
-    bank: ["Bank Soal (40-Butir)", "Kolaborasi Repositori Soal Informatika SMAN 1 Gondanglegi"],
-    input: ["Input Batch 40 Soal", "Unggah & Validasi 40 Butir Soal Sekaligus"],
-    compose: ["Pengolahan & Rakit Ujian", "Generator Paket Acak A/B/C & Mix-Match Lintas Batch"],
-    students: ["Data Siswa (X & XI)", "Direktori NIS Aktif, Import Massal & Cetak Kartu Peserta"],
-    live: ["Ujian Live & Token", "Penerbitan Token 6-Karakter & Live Proctoring Anti-Cheat"],
-    results: ["Hasil, Nilai & Analisis", "Rekap Ketuntasan KKM, Analisis Butir Soal & Berita Acara"]
-  };
-
-  const tEl = document.getElementById("topbarModuleTitle");
-  const sEl = document.getElementById("topbarModuleSubtitle");
-  if (tEl && titles[modKey]) tEl.textContent = titles[modKey][0];
-  if (sEl && titles[modKey]) sEl.textContent = titles[modKey][1];
-
-  document.querySelectorAll(".workspace-module").forEach(sec => sec.classList.add("hidden"));
-  document.getElementById(`module-${modKey}`)?.classList.remove("hidden");
-
-  document.querySelectorAll(".sidebar-nav-btn").forEach(btn => {
-    const active = btn.getAttribute("data-nav") === modKey;
-    btn.className = active
-      ? "sidebar-nav-btn w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-bold bg-indigo-600 text-white shadow-xs transition"
-      : "sidebar-nav-btn w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold text-slate-300 hover:bg-white/10 hover:text-white transition";
-  });
-
-  refreshAllTeacherViews();
-  renderIcons();
-}
-
-function refreshAllTeacherViews() {
-  const bBadge = document.getElementById("badgeBankCount");
-  const sBadge = document.getElementById("badgeStudentCount");
-  const lBadge = document.getElementById("badgeLiveActive");
-  if (bBadge) bBadge.textContent = String(db.batches.length);
-  if (sBadge) sBadge.textContent = String(db.students.length);
-  if (lBadge) lBadge.textContent = String(db.tokens.filter(t => t.status === "AKTIF").length);
-
-  populateDropdownOptions();
-  renderBankBatches();
-  renderGridEditorRows();
-  refreshMixStatus();
-  renderStudentDirectory();
-  renderActiveTokensGrid();
-  renderLiveProctoringTable();
-  renderResultsModule();
-}
-
-function populateDropdownOptions() {
-  const teacherFilter = document.getElementById("bankTeacherFilter");
-  if (teacherFilter && teacherFilter.options.length <= 1) {
-    db.teachers.forEach(t => {
-      const opt = document.createElement("option");
-      opt.value = t.nama || t.name;
-      opt.textContent = t.nama || t.name;
-      teacherFilter.appendChild(opt);
-    });
-  }
-
-  const batchSelectIds = ["variantSourceBatchSelect", "mixSource1Select", "mixSource2Select", "liveBatchSelect"];
-  batchSelectIds.forEach((id, idx) => {
-    const sel = document.getElementById(id);
-    if (!sel) return;
-    const prev = sel.value;
-    sel.innerHTML = db.batches.map(b =>
-      `<option value="${escapeHtml(b.batch_id)}">${escapeHtml(b.judul)} (${escapeHtml(b.kelas)})</option>`
-    ).join("");
-    if (prev && db.batches.some(b => b.batch_id === prev)) {
-      sel.value = prev;
-    } else if (idx === 2 && db.batches.length > 1) {
-      sel.selectedIndex = 1;
-    }
-  });
-
-  const tokenFilterIds = ["proctorTokenFilter", "resultsTokenFilter"];
-  tokenFilterIds.forEach(id => {
-    const sel = document.getElementById(id);
-    if (!sel) return;
-    const prev = sel.value;
-    const allOpt = id === "proctorTokenFilter" ? `<option value="ALL">Semua Sesi Token</option>` : "";
-    sel.innerHTML = allOpt + db.tokens.map(t =>
-      `<option value="${escapeHtml(t.token_code)}">${escapeHtml(t.token_code)} — ${escapeHtml(t.judul_ujian)}</option>`
-    ).join("");
-    if (prev) sel.value = prev;
-  });
-
-  if (!document.getElementById("liveTokenInput")?.value) {
-    populateNewTokenCode();
-  }
-  if (runtime.variants.A.length === 0 && db.batches.length > 0) {
-    generateShuffledVariants();
-  }
-}
-
-// =========================================================================
-// MODULE 1: BANK SOAL
-// =========================================================================
-function setBankSort(dir) {
-  runtime.bankSort = dir;
-  const nBtn = document.getElementById("sortNewestBtn");
-  const oBtn = document.getElementById("sortOldestBtn");
-  if (nBtn && oBtn) {
-    nBtn.className = dir === "newest"
-      ? "flex-1 py-1.5 px-2.5 rounded-lg text-xs font-bold bg-brand-900 text-white shadow-2xs transition flex items-center justify-center gap-1"
-      : "flex-1 py-1.5 px-2.5 rounded-lg text-xs font-bold text-slate-600 hover:text-slate-900 transition flex items-center justify-center gap-1";
-    oBtn.className = dir === "oldest"
-      ? "flex-1 py-1.5 px-2.5 rounded-lg text-xs font-bold bg-brand-900 text-white shadow-2xs transition flex items-center justify-center gap-1"
-      : "flex-1 py-1.5 px-2.5 rounded-lg text-xs font-bold text-slate-600 hover:text-slate-900 transition flex items-center justify-center gap-1";
-  }
-  renderBankBatches();
-  renderIcons();
-}
-
-function renderBankBatches() {
-  const totalQ = db.batches.reduce((s, b) => s + (b.questions?.length || 0), 0);
-  document.getElementById("kpiBankBatches").textContent = String(db.batches.length);
-  document.getElementById("kpiBankQuestions").textContent = String(totalQ);
-  document.getElementById("kpiBankClassX").textContent = String(db.batches.filter(b => b.kelas === "Kelas X").length);
-  document.getElementById("kpiBankClassXI").textContent = String(db.batches.filter(b => b.kelas === "Kelas XI").length);
-
-  const q = (document.getElementById("bankSearchInput")?.value || "").toLowerCase();
-  const teacherVal = document.getElementById("bankTeacherFilter")?.value || "ALL";
-  const classVal = document.getElementById("bankClassFilter")?.value || "ALL";
-
-  let list = [...db.batches].filter(b => {
-    const matchText = !q ||
-      String(b.judul).toLowerCase().includes(q) ||
-      String(b.topik).toLowerCase().includes(q) ||
-      String(b.batch_id).toLowerCase().includes(q);
-    const matchTeacher = teacherVal === "ALL" || b.pembuat_nama === teacherVal;
-    const matchClass = classVal === "ALL" || b.kelas === classVal;
-    return matchText && matchTeacher && matchClass;
-  });
-
-  list.sort((a, b) => {
-    const da = new Date(a.tanggal || 0).getTime();
-    const dbTime = new Date(b.tanggal || 0).getTime();
-    return runtime.bankSort === "newest" ? dbTime - da : da - dbTime;
-  });
-
-  const grid = document.getElementById("bankBatchesGrid");
-  if (!grid) return;
-
-  if (list.length === 0) {
-    grid.innerHTML = `<div class="col-span-full p-8 text-center bg-white rounded-2xl border border-slate-200 text-xs text-slate-500">Tidak ada paket batch soal yang sesuai filter.</div>`;
-    return;
-  }
-
-  grid.innerHTML = list.map(b => `
-    <div class="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs hover:border-indigo-400 transition flex flex-col justify-between gap-4">
-      <div class="space-y-2.5">
-        <div class="flex items-center justify-between gap-2">
-          <span class="px-2.5 py-0.5 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200 text-[11px] font-bold">${escapeHtml(b.kelas)}</span>
-          <span class="font-mono text-[11px] text-slate-400">${escapeHtml(b.tanggal)}</span>
+        <div class="p-3 border-t border-white/10 space-y-1">
+          <button type="button" onclick="manualCloudSync()" class="w-full px-3 py-2 rounded-xl text-xs font-semibold text-slate-300 hover:bg-white/10 hover:text-white transition flex items-center gap-2.5">
+            <i data-lucide="refresh-cw" class="w-4 h-4"></i>Sinkron Cloud
+          </button>
+          <button type="button" onclick="openBackupModal()" class="w-full px-3 py-2 rounded-xl text-xs font-semibold text-slate-300 hover:bg-white/10 hover:text-white transition flex items-center gap-2.5">
+            <i data-lucide="database" class="w-4 h-4"></i>Backup / Reset
+          </button>
+          <button type="button" onclick="launchStudentPortalFromTeacher()" class="w-full px-3 py-2 rounded-xl text-xs font-semibold text-slate-300 hover:bg-white/10 hover:text-white transition flex items-center gap-2.5">
+            <i data-lucide="user" class="w-4 h-4"></i>Portal Siswa
+          </button>
+          <button type="button" onclick="logoutToGate()" class="w-full px-3 py-2 rounded-xl text-xs font-bold text-rose-300 hover:bg-rose-500/10 transition flex items-center gap-2.5">
+            <i data-lucide="log-out" class="w-4 h-4"></i>Keluar
+          </button>
         </div>
-        <h4 class="text-sm font-extrabold text-slate-900 leading-snug">${escapeHtml(b.judul)}</h4>
-        <p class="text-xs text-slate-500">${escapeHtml(b.topik)} • <span class="font-mono">${escapeHtml(b.batch_id)}</span></p>
-      </div>
+      </aside>
 
-      <div class="pt-3 border-t border-slate-100 space-y-3">
-        <div class="flex items-center justify-between text-[11px] text-slate-600">
-          <span>Oleh: <strong>${escapeHtml(b.pembuat_nama)}</strong></span>
-          <span class="font-mono font-bold text-emerald-700">${b.questions?.length || 40} Soal</span>
-        </div>
-        <button type="button" onclick="openBatchInspector('${escapeHtml(b.batch_id)}')"
-          class="w-full py-2 px-3 rounded-xl bg-slate-900 hover:bg-brand-900 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition">
-          <i data-lucide="eye" class="w-3.5 h-3.5 text-cyan-300"></i>
-          <span>Inspeksi 40 Butir Soal</span>
-        </button>
-      </div>
-    </div>
-  `).join("");
-  renderIcons();
-}
-
-function openBatchInspector(batchId) {
-  const batch = db.batches.find(b => b.batch_id === batchId);
-  if (!batch) return;
-  runtime.inspectedBatchId = batchId;
-  runtime.inspectorShowKeys = false;
-
-  document.getElementById("inspectorTitle").textContent = batch.judul;
-  document.getElementById("inspectorMeta").textContent = `${batch.kelas} • ${batch.topik} • Pembuat: ${batch.pembuat_nama} (${batch.tanggal})`;
-  renderInspectorQuestions();
-  openModal("batchInspectorModal");
-}
-
-function toggleInspectorKeys() {
-  runtime.inspectorShowKeys = !runtime.inspectorShowKeys;
-  const btn = document.getElementById("inspectorToggleKeysBtn");
-  if (btn) btn.textContent = runtime.inspectorShowKeys ? "Sembunyikan Kunci" : "Tampilkan Kunci & Level";
-  renderInspectorQuestions();
-}
-
-function renderInspectorQuestions() {
-  const batch = db.batches.find(b => b.batch_id === runtime.inspectedBatchId);
-  const container = document.getElementById("inspectorQuestionsList");
-  if (!batch || !container) return;
-
-  container.innerHTML = (batch.questions || []).map((q, idx) => `
-    <div class="p-4 rounded-2xl bg-white border border-slate-200 space-y-2">
-      <div class="flex items-center justify-between">
-        <span class="font-mono font-extrabold text-brand-900">Soal #${idx + 1}</span>
-        ${runtime.inspectorShowKeys ? `<span class="px-2.5 py-0.5 rounded-md bg-emerald-100 text-emerald-800 font-mono font-bold">Kunci: ${escapeHtml(q.kunci)} • ${escapeHtml(q.level_kognitif || "C2")}</span>` : ""}
-      </div>
-      <p class="font-semibold text-slate-900">${escapeHtml(q.pertanyaan)}</p>
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-slate-600 pt-1">
-        ${["A", "B", "C", "D", "E"].map(opt => {
-          const val = q[`opsi_${opt.toLowerCase()}`];
-          const isKey = runtime.inspectorShowKeys && q.kunci === opt;
-          return `<div class="px-2.5 py-1.5 rounded-lg border ${isKey ? "bg-emerald-50 border-emerald-300 text-emerald-900 font-bold" : "bg-slate-50 border-slate-200"}">${opt}. ${escapeHtml(val)}</div>`;
-        }).join("")}
-      </div>
-    </div>
-  `).join("");
-}
-
-function quickCreateTokenFromInspector() {
-  const batchId = runtime.inspectedBatchId;
-  closeModal("batchInspectorModal");
-  switchTeacherModule("live");
-  const sel = document.getElementById("liveBatchSelect");
-  if (sel && batchId) sel.value = batchId;
-}
-
-// =========================================================================
-// MODULE 2: INPUT BATCH 40 SOAL
-// =========================================================================
-function switchInputSubTab(mode) {
-  const isPaste = mode === "paste";
-  document.getElementById("inputPanePaste")?.classList.toggle("hidden", !isPaste);
-  document.getElementById("inputPaneGrid")?.classList.toggle("hidden", isPaste);
-  document.getElementById("inputSubTabPasteBtn").className = isPaste
-    ? "px-3.5 py-1.5 rounded-xl text-xs font-bold bg-brand-900 text-white transition"
-    : "px-3.5 py-1.5 rounded-xl text-xs font-bold bg-white text-slate-700 border border-slate-300 hover:bg-slate-100 transition";
-  document.getElementById("inputSubTabGridBtn").className = !isPaste
-    ? "px-3.5 py-1.5 rounded-xl text-xs font-bold bg-brand-900 text-white transition"
-    : "px-3.5 py-1.5 rounded-xl text-xs font-bold bg-white text-slate-700 border border-slate-300 hover:bg-slate-100 transition";
-}
-
-function loadSample40Template() {
-  const topic = document.getElementById("inputBatchTopic")?.value || "Informatika";
-  const keys = ["A", "B", "C", "D", "E"];
-  const levels = ["C1", "C2", "C3", "C4"];
-  const lines = Array.from({ length: 40 }, (_, i) => {
-    const n = i + 1;
-    return `${n}. Pertanyaan ${topic} butir ke-${n} mengenai konsep sistem komputasi dan pemecahan masalah? | Jawaban A-${n} | Jawaban B-${n} | Jawaban C-${n} | Jawaban D-${n} | Jawaban E-${n} | ${keys[i % 5]} | ${levels[i % 4]}`;
-  });
-  const ta = document.getElementById("smartPasteTextarea");
-  if (ta) ta.value = lines.join("\n");
-  if (!document.getElementById("inputBatchTitle")?.value) {
-    document.getElementById("inputBatchTitle").value = `Paket Evaluasi ${topic} (40 Soal)`;
-  }
-  parseSmartPasteText();
-  showToast("Template 40 soal berhasil dimuat dan divalidasi.", "success");
-}
-
-function resetInputDraft() {
-  document.getElementById("inputBatchTitle").value = "";
-  document.getElementById("smartPasteTextarea").value = "";
-  runtime.draftQuestions = [];
-  renderGridEditorRows();
-  evaluateDraftValidity();
-}
-
-function parseSmartPasteText(silent = false) {
-  const raw = (document.getElementById("smartPasteTextarea")?.value || "").trim();
-  const diag = document.getElementById("pasteDiagnosticsBox");
-  if (!raw) {
-    runtime.draftQuestions = [];
-    renderGridEditorRows();
-    evaluateDraftValidity();
-    if (diag) diag.textContent = "Belum ada teks soal yang diproses.";
-    return;
-  }
-
-  const lines = raw.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-  const parsed = [];
-  const errors = [];
-
-  lines.forEach((line, idx) => {
-    const parts = line.split("|").map(p => p.trim());
-    if (parts.length < 7) {
-      errors.push(`Baris ${idx + 1}: kolom kurang dari 7 (gunakan pemisah '|').`);
-      return;
-    }
-    const qText = parts[0].replace(/^\d+[\.\)]\s*/, "");
-    const kunci = (parts[6] || "").toUpperCase();
-    if (!["A", "B", "C", "D", "E"].includes(kunci)) {
-      errors.push(`Baris ${idx + 1}: kunci jawaban '${kunci}' harus A-E.`);
-      return;
-    }
-    parsed.push({
-      nomor: idx + 1,
-      pertanyaan: qText,
-      opsi_a: parts[1],
-      opsi_b: parts[2],
-      opsi_c: parts[3],
-      opsi_d: parts[4],
-      opsi_e: parts[5],
-      kunci,
-      level_kognitif: (parts[7] || "C2").toUpperCase()
-    });
-  });
-
-  runtime.draftQuestions = parsed;
-  renderGridEditorRows();
-  evaluateDraftValidity();
-
-  if (diag) {
-    if (errors.length > 0) {
-      diag.innerHTML = `<span class="text-rose-700 font-bold">Ditemukan ${errors.length} kendala format:</span> ${escapeHtml(errors.slice(0, 3).join(" | "))}`;
-    } else {
-      diag.innerHTML = `<span class="text-emerald-700 font-bold">Berhasil memproses ${parsed.length} baris soal.</span> ${parsed.length === 40 ? "Siap disimpan ke Bank Soal!" : "Wajib tepat 40 baris soal."}`;
-    }
-  }
-  if (!silent && errors.length === 0) showToast(`${parsed.length} soal diproses.`, "info");
-}
-
-function renderGridEditorRows() {
-  const tbody = document.getElementById("gridEditorTbody");
-  if (!tbody) return;
-  tbody.innerHTML = Array.from({ length: 40 }, (_, i) => {
-    const q = runtime.draftQuestions[i] || { pertanyaan: "", opsi_a: "", opsi_b: "", opsi_c: "", opsi_d: "", opsi_e: "", kunci: "A", level_kognitif: "C2" };
-    return `
-      <tr>
-        <td class="p-2 text-center font-mono font-bold text-slate-500">${i + 1}</td>
-        <td class="p-1.5"><input type="text" value="${escapeHtml(q.pertanyaan)}" onchange="updateGridCell(${i}, 'pertanyaan', this.value)" class="w-full px-2 py-1 border border-slate-200 rounded" /></td>
-        <td class="p-1.5"><input type="text" value="${escapeHtml(q.opsi_a)}" onchange="updateGridCell(${i}, 'opsi_a', this.value)" class="w-full px-2 py-1 border border-slate-200 rounded" /></td>
-        <td class="p-1.5"><input type="text" value="${escapeHtml(q.opsi_b)}" onchange="updateGridCell(${i}, 'opsi_b', this.value)" class="w-full px-2 py-1 border border-slate-200 rounded" /></td>
-        <td class="p-1.5"><input type="text" value="${escapeHtml(q.opsi_c)}" onchange="updateGridCell(${i}, 'opsi_c', this.value)" class="w-full px-2 py-1 border border-slate-200 rounded" /></td>
-        <td class="p-1.5"><input type="text" value="${escapeHtml(q.opsi_d)}" onchange="updateGridCell(${i}, 'opsi_d', this.value)" class="w-full px-2 py-1 border border-slate-200 rounded" /></td>
-        <td class="p-1.5"><input type="text" value="${escapeHtml(q.opsi_e)}" onchange="updateGridCell(${i}, 'opsi_e', this.value)" class="w-full px-2 py-1 border border-slate-200 rounded" /></td>
-        <td class="p-1.5 text-center">
-          <select onchange="updateGridCell(${i}, 'level_kognitif', this.value)" class="px-1.5 py-1 border border-slate-200 rounded bg-white">
-            ${["C1", "C2", "C3", "C4"].map(lv => `<option value="${lv}" ${q.level_kognitif === lv ? "selected" : ""}>${lv}</option>`).join("")}
-          </select>
-        </td>
-        <td class="p-1.5 text-center">
-          <select onchange="updateGridCell(${i}, 'kunci', this.value)" class="px-2 py-1 border border-slate-200 rounded bg-white font-bold">
-            ${["A", "B", "C", "D", "E"].map(k => `<option value="${k}" ${q.kunci === k ? "selected" : ""}>${k}</option>`).join("")}
-          </select>
-        </td>
-      </tr>
-    `;
-  }).join("");
-}
-
-function updateGridCell(idx, field, val) {
-  if (!runtime.draftQuestions[idx]) {
-    runtime.draftQuestions[idx] = { nomor: idx + 1, pertanyaan: "", opsi_a: "", opsi_b: "", opsi_c: "", opsi_d: "", opsi_e: "", kunci: "A", level_kognitif: "C2" };
-  }
-  runtime.draftQuestions[idx][field] = val.trim();
-  evaluateDraftValidity();
-}
-
-function evaluateDraftValidity() {
-  const validCount = runtime.draftQuestions.filter(q =>
-    q && q.pertanyaan && q.opsi_a && q.opsi_b && q.opsi_c && q.opsi_d && ["A", "B", "C", "D", "E"].includes(q.kunci)
-  ).length;
-  const titleOk = Boolean((document.getElementById("inputBatchTitle")?.value || "").trim());
-  const pct = Math.min(100, Math.round((validCount / 40) * 100));
-
-  const bar = document.getElementById("draftMeterBar");
-  const badge = document.getElementById("draftMeterBadge");
-  const saveBtn = document.getElementById("saveBatchBtn");
-  if (bar) {
-    bar.style.width = `${pct}%`;
-    bar.className = validCount === 40 ? "h-full bg-emerald-500 transition-all" : "h-full bg-amber-500 transition-all";
-  }
-  if (badge) {
-    badge.textContent = `${validCount} / 40 Soal Valid`;
-    badge.className = validCount === 40
-      ? "px-3 py-1 rounded-full text-xs font-mono font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 tabular-nums"
-      : "px-3 py-1 rounded-full text-xs font-mono font-bold bg-amber-50 text-amber-800 border border-amber-200 tabular-nums";
-  }
-  if (saveBtn) saveBtn.disabled = !(validCount === 40 && titleOk);
-}
-
-async function commitNewBatch40() {
-  const title = (document.getElementById("inputBatchTitle")?.value || "").trim();
-  const kelas = document.getElementById("inputBatchClass")?.value || "Kelas X";
-  const topik = document.getElementById("inputBatchTopic")?.value || "Informatika";
-  if (!title || runtime.draftQuestions.length !== 40) return;
-
-  const batchId = `BATCH-${Date.now().toString().slice(-6)}`;
-  const teacher = runtime.activeTeacher || db.teachers[0];
-  const newBatch = {
-    batch_id: batchId,
-    judul: title,
-    kelas,
-    topik,
-    pembuat_id: teacher.id,
-    pembuat_nama: teacher.name,
-    tanggal: new Date().toISOString().slice(0, 10),
-    jumlah_soal: 40,
-    questions: runtime.draftQuestions.map((q, i) => ({
-      ...q,
-      question_id: `${batchId}-Q${i + 1}`,
-      batch_id: batchId,
-      nomor: i + 1
-    }))
-  };
-
-  db.batches.unshift(newBatch);
-  saveDb();
-
-  if (isApiReady()) {
-    try {
-      await smatechApi("saveBatch40", { batch: newBatch, questions: newBatch.questions });
-      showToast("Batch 40 soal tersimpan ke Google Sheets & lokal!", "success");
-    } catch (_) {
-      showToast("Tersimpan lokal (Cloud gagal sinkron).", "warning");
-    }
-  } else {
-    showToast("Batch 40 soal berhasil disimpan ke Bank Soal!", "success");
-  }
-
-  resetInputDraft();
-  switchTeacherModule("bank");
-}
-
-// =========================================================================
-// MODULE 3: PENGOLAHAN & RAKIT UJIAN
-// =========================================================================
-function shuffleArray(arr) {
-  const copy = [...arr];
-  for (let i = copy.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [copy[i], copy[j]] = [copy[j], copy[i]];
-  }
-  return copy;
-}
-
-function generateShuffledVariants() {
-  const batchId = document.getElementById("variantSourceBatchSelect")?.value || db.batches[0]?.batch_id;
-  const batch = db.batches.find(b => b.batch_id === batchId);
-  if (!batch) return;
-
-  const pinFive = document.getElementById("pinFirstFiveCheckbox")?.checked;
-  const base = batch.questions || [];
-  runtime.variants.A = [...base];
-
-  const makeShuffled = () => {
-    if (pinFive && base.length > 5) {
-      return [...base.slice(0, 5), ...shuffleArray(base.slice(5))];
-    }
-    return shuffleArray(base);
-  };
-
-  runtime.variants.B = makeShuffled();
-  runtime.variants.C = makeShuffled();
-  selectActiveVariant(runtime.activeVariantKey);
-}
-
-function selectActiveVariant(key) {
-  runtime.activeVariantKey = key;
-  ["A", "B", "C"].forEach(k => {
-    const btn = document.getElementById(`variantTab${k}`);
-    if (btn) {
-      btn.className = k === key
-        ? "py-2 rounded-xl text-xs font-extrabold bg-brand-900 text-white"
-        : "py-2 rounded-xl text-xs font-extrabold bg-slate-100 text-slate-700";
-    }
-  });
-
-  const list = runtime.variants[key] || [];
-  const box = document.getElementById("variantPreviewContainer");
-  if (!box) return;
-  box.innerHTML = list.slice(0, 10).map((q, i) => `
-    <div class="p-2.5 rounded-lg bg-white border border-slate-200 flex items-center justify-between gap-2">
-      <span class="truncate"><strong>${i + 1}.</strong> ${escapeHtml(q.pertanyaan)}</span>
-      <span class="px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 font-mono font-bold shrink-0">Kunci: ${escapeHtml(q.kunci)}</span>
-    </div>
-  `).join("") + `<p class="text-[11px] text-center text-slate-400 pt-1">Menampilkan 10 dari ${list.length} soal Paket ${key}.</p>`;
-}
-
-function exportVariantCsv() {
-  const list = runtime.variants[runtime.activeVariantKey] || [];
-  if (!list.length) return;
-  const rows = [["No", "Pertanyaan", "Opsi_A", "Opsi_B", "Opsi_C", "Opsi_D", "Opsi_E", "Kunci"]];
-  list.forEach((q, i) => rows.push([i + 1, q.pertanyaan, q.opsi_a, q.opsi_b, q.opsi_c, q.opsi_d, q.opsi_e, q.kunci]));
-  downloadCsv(`SMATECH_Paket_${runtime.activeVariantKey}.csv`, rows);
-}
-
-function openPrintableExamModal() {
-  const list = runtime.variants[runtime.activeVariantKey] || [];
-  const printEl = document.getElementById("printContainer");
-  if (!printEl || !list.length) return;
-  printEl.innerHTML = `
-    <div style="font-family: sans-serif; color: #000;">
-      <div style="text-align: center; border-bottom: 3px double #000; padding-bottom: 10px; margin-bottom: 16px;">
-        <h2 style="margin:0; font-size: 16px;">PEMERINTAH PROVINSI JAWA TIMUR — DINAS PENDIDIKAN</h2>
-        <h1 style="margin:2px 0; font-size: 20px;">SMA NEGERI 1 GONDANGLEGI</h1>
-        <p style="margin:0; font-size: 12px;">Naskah Asesmen Informatika • Paket Varian ${runtime.activeVariantKey}</p>
-      </div>
-      ${list.map((q, i) => `
-        <div style="margin-bottom: 12px; font-size: 12px;">
-          <p style="margin:0 0 4px 0;"><strong>${i + 1}.</strong> ${escapeHtml(q.pertanyaan)}</p>
-          <div style="padding-left: 16px;">
-            <div>A. ${escapeHtml(q.opsi_a)}</div>
-            <div>B. ${escapeHtml(q.opsi_b)}</div>
-            <div>C. ${escapeHtml(q.opsi_c)}</div>
-            <div>D. ${escapeHtml(q.opsi_d)}</div>
-            <div>E. ${escapeHtml(q.opsi_e)}</div>
+      <!-- Main -->
+      <div class="flex-1 flex flex-col min-w-0">
+        <header class="sticky top-0 z-20 bg-white/90 backdrop-blur border-b border-slate-200 px-4 sm:px-6 py-3 flex items-center gap-3">
+          <button type="button" onclick="toggleMobileSidebar(true)" class="lg:hidden p-2 rounded-lg border border-slate-300 text-slate-600">
+            <i data-lucide="menu" class="w-4 h-4"></i>
+          </button>
+          <div class="flex-1 min-w-0">
+            <h2 id="topbarModuleTitle" class="text-base sm:text-lg font-extrabold text-slate-900 truncate">Bank Soal (40-Butir)</h2>
+            <p id="topbarModuleSubtitle" class="text-[11px] text-slate-500 truncate">Kolaborasi Repositori Soal Informatika</p>
           </div>
-        </div>
-      `).join("")}
+          <button type="button" onclick="logoutToGate()" class="hidden sm:inline-flex px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition items-center gap-2">
+            <i data-lucide="log-out" class="w-4 h-4"></i>Keluar
+          </button>
+        </header>
+
+        <main class="flex-1 p-4 sm:p-6">
+
+          <!-- ============ MODULE: BANK ============ -->
+          <section id="module-bank" class="workspace-module hidden space-y-5">
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <div class="p-4 rounded-2xl bg-white border border-slate-200 shadow-sm"><div class="text-2xl font-extrabold text-brand-900" id="kpiBankBatches">0</div><div class="text-[11px] font-semibold text-slate-500">Paket Batch</div></div>
+              <div class="p-4 rounded-2xl bg-white border border-slate-200 shadow-sm"><div class="text-2xl font-extrabold text-brand-900" id="kpiBankQuestions">0</div><div class="text-[11px] font-semibold text-slate-500">Total Soal</div></div>
+              <div class="p-4 rounded-2xl bg-white border border-slate-200 shadow-sm"><div class="text-2xl font-extrabold text-emerald-600" id="kpiBankClassX">0</div><div class="text-[11px] font-semibold text-slate-500">Paket Kelas X</div></div>
+              <div class="p-4 rounded-2xl bg-white border border-slate-200 shadow-sm"><div class="text-2xl font-extrabold text-amber-600" id="kpiBankClassXI">0</div><div class="text-[11px] font-semibold text-slate-500">Paket Kelas XI</div></div>
+            </div>
+
+            <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 flex flex-col gap-3">
+              <div class="flex flex-col md:flex-row gap-3">
+                <input id="bankSearchInput" type="text" placeholder="Cari judul / topik / ID batch..." oninput="renderBankBatches()"
+                  class="flex-1 px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-brand-600" />
+                <select id="bankTeacherFilter" onchange="renderBankBatches()" class="px-3 py-2.5 rounded-xl border border-slate-300 text-sm bg-white">
+                  <option value="ALL">Semua Guru</option>
+                </select>
+                <select id="bankClassFilter" onchange="renderBankBatches()" class="px-3 py-2.5 rounded-xl border border-slate-300 text-sm bg-white">
+                  <option value="ALL">Semua Kelas</option>
+                  <option value="Kelas X">Kelas X</option>
+                  <option value="Kelas XI">Kelas XI</option>
+                </select>
+              </div>
+              <div class="flex gap-2">
+                <button type="button" id="sortNewestBtn" onclick="setBankSort('newest')" class="flex-1 py-1.5 px-2.5 rounded-lg text-xs font-bold bg-brand-900 text-white shadow-2xs transition flex items-center justify-center gap-1">Terbaru</button>
+                <button type="button" id="sortOldestBtn" onclick="setBankSort('oldest')" class="flex-1 py-1.5 px-2.5 rounded-lg text-xs font-bold text-slate-600 hover:text-slate-900 transition flex items-center justify-center gap-1">Terlama</button>
+              </div>
+            </div>
+
+            <div id="bankBatchesGrid" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"></div>
+          </section>
+
+          <!-- ============ MODULE: INPUT ============ -->
+          <section id="module-input" class="workspace-module hidden space-y-5">
+            <div class="flex items-center gap-2">
+              <button type="button" id="inputSubTabPasteBtn" onclick="switchInputSubTab('paste')" class="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-brand-900 text-white transition">Smart Paste</button>
+              <button type="button" id="inputSubTabGridBtn" onclick="switchInputSubTab('grid')" class="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-white text-slate-700 border border-slate-300 hover:bg-slate-100 transition">Grid Editor</button>
+            </div>
+
+            <div id="inputPanePaste" class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-5 space-y-4">
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <input id="inputBatchTitle" type="text" placeholder="Judul paket (mis. Asesmen Sumatif X)" class="md:col-span-2 px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-brand-600" />
+                <select id="inputBatchClass" class="px-3 py-2.5 rounded-xl border border-slate-300 text-sm bg-white">
+                  <option>Kelas X</option>
+                  <option>Kelas XI</option>
+                </select>
+              </div>
+              <input id="inputBatchTopic" type="text" placeholder="Topik (mis. Berpikir Komputasional)" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-brand-600" />
+              <textarea id="smartPasteTextarea" rows="9" placeholder="Tempel 40 baris soal dengan format:&#10;Pertanyaan | Opsi A | Opsi B | Opsi C | Opsi D | Opsi E | Kunci(A-E) | Level(C1-C6)"
+                class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-600"></textarea>
+              <div id="pasteDiagnosticsBox" class="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-600">Belum ada teks soal yang diproses.</div>
+              <div class="flex flex-wrap gap-2">
+                <button type="button" onclick="loadSample40Template()" class="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-brand-900 text-white text-xs font-bold transition">Muat Template 40 Soal</button>
+                <button type="button" onclick="parseSmartPasteText(false)" class="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition">Validasi Soal</button>
+                <button type="button" onclick="resetInputDraft()" class="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition">Reset</button>
+              </div>
+            </div>
+
+            <div id="inputPaneGrid" class="hidden bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-5 space-y-4">
+              <div class="flex items-center justify-between gap-3 flex-wrap">
+                <span id="draftMeterBadge" class="px-3 py-1 rounded-full text-xs font-mono font-bold bg-amber-50 text-amber-800 border border-amber-200 tabular-nums">0 / 40 Soal Valid</span>
+                <button type="button" id="saveBatchBtn" onclick="commitNewBatch40()" disabled
+                  class="px-4 py-2 rounded-xl bg-brand-900 text-white text-xs font-bold transition disabled:opacity-40 disabled:cursor-not-allowed">Simpan Batch 40 Soal</button>
+              </div>
+              <div class="h-2 bg-slate-200 rounded-full overflow-hidden"><div id="draftMeterBar" class="h-full bg-amber-500 transition-all" style="width:0%"></div></div>
+              <div class="overflow-x-auto border border-slate-200 rounded-xl">
+                <table class="w-full text-xs">
+                  <thead class="bg-slate-50 text-slate-500">
+                    <tr>
+                      <th class="p-2 text-center">No</th><th class="p-2 text-left">Pertanyaan</th>
+                      <th class="p-2">A</th><th class="p-2">B</th><th class="p-2">C</th><th class="p-2">D</th><th class="p-2">E</th>
+                      <th class="p-2">Level</th><th class="p-2">Kunci</th>
+                    </tr>
+                  </thead>
+                  <tbody id="gridEditorTbody"></tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+
+          <!-- ============ MODULE: COMPOSE ============ -->
+          <section id="module-compose" class="workspace-module hidden space-y-5">
+            <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-5 space-y-4">
+              <div class="flex flex-col md:flex-row gap-3 md:items-end">
+                <div class="flex-1">
+                  <label class="block text-[11px] font-bold text-slate-500 mb-1">Sumber Bank Soal</label>
+                  <select id="variantSourceBatchSelect" onchange="generateShuffledVariants()" class="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-sm bg-white"></select>
+                </div>
+                <label class="flex items-center gap-2 text-xs font-semibold text-slate-700 pb-1.5">
+                  <input type="checkbox" id="pinFirstFiveCheckbox" onchange="generateShuffledVariants()" class="accent-brand-600" />
+                  Kunci 5 soal pertama (tidak diacak)
+                </label>
+                <button type="button" onclick="generateShuffledVariants()" class="px-4 py-2.5 rounded-xl bg-brand-900 hover:bg-brand-800 text-white text-xs font-bold transition">Generate A/B/C</button>
+              </div>
+
+              <div class="grid grid-cols-3 gap-2">
+                <button type="button" id="variantTabA" onclick="selectActiveVariant('A')" class="py-2 rounded-xl text-xs font-extrabold bg-brand-900 text-white">Paket A</button>
+                <button type="button" id="variantTabB" onclick="selectActiveVariant('B')" class="py-2 rounded-xl text-xs font-extrabold bg-slate-100 text-slate-700">Paket B</button>
+                <button type="button" id="variantTabC" onclick="selectActiveVariant('C')" class="py-2 rounded-xl text-xs font-extrabold bg-slate-100 text-slate-700">Paket C</button>
+              </div>
+              <div id="variantPreviewContainer" class="space-y-2"></div>
+              <div class="flex flex-wrap gap-2">
+                <button type="button" onclick="exportVariantCsv()" class="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-brand-900 text-white text-xs font-bold transition">Export CSV</button>
+                <button type="button" onclick="openPrintableExamModal()" class="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition">Cetak Naskah</button>
+              </div>
+            </div>
+
+            <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-5 space-y-4">
+              <div>
+                <h3 class="text-sm font-extrabold text-slate-900">Mix-Match Lintas Batch (40 Soal)</h3>
+                <p class="text-[11px] text-slate-500">Gabungkan soal dari dua batch menjadi satu paket 40 butir.</p>
+              </div>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <select id="mixSource1Select" onchange="refreshMixStatus()" class="px-3 py-2.5 rounded-xl border border-slate-300 text-sm bg-white"></select>
+                <select id="mixSource2Select" onchange="refreshMixStatus()" class="px-3 py-2.5 rounded-xl border border-slate-300 text-sm bg-white"></select>
+              </div>
+              <div>
+                <div class="flex items-center justify-between text-xs font-bold text-slate-600 mb-1">
+                  <span>Batch 1: <span id="mixLeftCount" class="text-brand-900">20</span> soal</span>
+                  <span>Batch 2: <span id="mixRightCount" class="text-brand-900">20</span> soal</span>
+                </div>
+                <input type="range" id="mixRatioSlider" min="0" max="40" value="20" oninput="refreshMixStatus()" class="w-full accent-brand-600" />
+              </div>
+              <div id="mixDuplicateCheckBox" class="text-[11px] font-semibold flex items-center gap-1.5 pt-1 text-emerald-700"></div>
+              <input id="mixNewTitleInput" type="text" placeholder="Judul paket gabungan" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-brand-600" />
+              <div class="flex flex-wrap gap-2">
+                <button type="button" onclick="saveCombinedBatch40()" class="px-3.5 py-2 rounded-xl bg-brand-900 hover:bg-brand-800 text-white text-xs font-bold transition">Simpan Paket Gabungan</button>
+                <button type="button" onclick="exportMixedCsv()" class="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition">Export CSV</button>
+              </div>
+            </div>
+          </section>
+
+          <!-- ============ MODULE: STUDENTS ============ -->
+          <section id="module-students" class="workspace-module hidden space-y-5">
+            <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 flex flex-col md:flex-row gap-3">
+              <input id="studentSearchInput" type="text" placeholder="Cari NIS / nama..." oninput="renderStudentDirectory()"
+                class="flex-1 px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-brand-600" />
+              <select id="studentClassFilterSelect" onchange="renderStudentDirectory()" class="px-3 py-2.5 rounded-xl border border-slate-300 text-sm bg-white">
+                <option value="ALL">Semua Kelas</option>
+                <option value="PREFIX_X">Kelas X</option>
+                <option value="PREFIX_XI">Kelas XI</option>
+              </select>
+              <button type="button" onclick="openImportStudentsModal()" class="px-4 py-2.5 rounded-xl bg-brand-900 hover:bg-brand-800 text-white text-xs font-bold transition">Import Massal</button>
+              <button type="button" onclick="printStudentExamCards()" class="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition">Cetak Kartu</button>
+            </div>
+            <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-x-auto">
+              <table class="w-full text-sm">
+                <thead class="bg-slate-50 text-slate-500 text-xs">
+                  <tr><th class="p-3.5 text-left">NIS</th><th class="p-3.5 text-left">Nama</th><th class="p-3.5 text-left">Kelas</th><th class="p-3.5 text-center">Status</th><th class="p-3.5 text-right">Aksi</th></tr>
+                </thead>
+                <tbody id="studentDirectoryTbody"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <!-- ============ MODULE: LIVE ============ -->
+          <section id="module-live" class="workspace-module hidden space-y-5">
+            <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-5 space-y-4">
+              <div>
+                <h3 class="text-sm font-extrabold text-slate-900">Terbitkan Token Sesi Ujian</h3>
+                <p class="text-[11px] text-slate-500">Konfigurasi sesi, lalu terbitkan token 6-karakter untuk siswa.</p>
+              </div>
+              <input id="liveExamTitleInput" type="text" placeholder="Judul sesi ujian" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-brand-600" />
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <select id="liveBatchSelect" class="px-3 py-2.5 rounded-xl border border-slate-300 text-sm bg-white"></select>
+                <div class="flex gap-2">
+                  <input id="liveTokenInput" type="text" maxlength="6" class="flex-1 px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm font-mono uppercase tracking-widest focus:outline-none focus:ring-2 focus:ring-brand-600" />
+                  <button type="button" onclick="populateNewTokenCode()" class="px-3 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition"><i data-lucide="dices" class="w-4 h-4"></i></button>
+                </div>
+                <select id="liveTargetClassSelect" class="px-3 py-2.5 rounded-xl border border-slate-300 text-sm bg-white">
+                  <option value="ALL">Semua Kelas</option>
+                  <option value="KELAS_X">Kelas X</option>
+                  <option value="KELAS_XI">Kelas XI</option>
+                </select>
+              </div>
+              <div class="grid grid-cols-3 gap-3">
+                <div><label class="block text-[11px] font-bold text-slate-500 mb-1">Durasi (menit)</label><input id="liveDurationInput" type="number" min="1" value="60" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm" /></div>
+                <div><label class="block text-[11px] font-bold text-slate-500 mb-1">KKM</label><input id="liveKkmInput" type="number" min="0" max="100" value="75" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm" /></div>
+                <div><label class="block text-[11px] font-bold text-slate-500 mb-1">Maks Pelanggaran</label>
+                  <select id="liveMaxCheatSelect" class="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-sm bg-white">
+                    <option value="1">1x</option><option value="2">2x</option><option value="3" selected>3x</option><option value="4">4x</option><option value="5">5x</option>
+                  </select>
+                </div>
+              </div>
+              <div class="flex flex-wrap gap-4 text-xs font-semibold text-slate-700">
+                <label class="flex items-center gap-2"><input type="checkbox" id="liveRandomizeCheck" checked class="accent-brand-600" /> Acak Soal</label>
+                <label class="flex items-center gap-2"><input type="checkbox" id="liveFullscreenCheck" checked class="accent-brand-600" /> Wajib Fullscreen</label>
+                <label class="flex items-center gap-2"><input type="checkbox" id="liveShowScoreCheck" checked class="accent-brand-600" /> Tampilkan Nilai</label>
+              </div>
+              <button type="button" onclick="createNewTokenSession()" class="px-4 py-2.5 rounded-xl bg-brand-900 hover:bg-brand-800 text-white text-sm font-bold transition">Terbitkan Token</button>
+            </div>
+
+            <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-5 space-y-3">
+              <div class="flex items-center justify-between">
+                <h3 class="text-sm font-extrabold text-slate-900">Token Aktif</h3>
+                <span id="tokenActiveSummaryPill" class="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[11px] font-bold">0 Token</span>
+              </div>
+              <div id="activeTokensGrid" class="grid grid-cols-1 md:grid-cols-2 gap-3"></div>
+            </div>
+
+            <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-5 space-y-3">
+              <div class="flex items-center justify-between flex-wrap gap-2">
+                <h3 class="text-sm font-extrabold text-slate-900">Live Proctoring</h3>
+                <select id="proctorTokenFilter" onchange="renderLiveProctoringTable()" class="px-3 py-2 rounded-xl border border-slate-300 text-sm bg-white"></select>
+              </div>
+              <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                  <thead class="bg-slate-50 text-slate-500 text-xs">
+                    <tr><th class="p-3.5 text-left">Peserta</th><th class="p-3.5 text-left">Token</th><th class="p-3.5 text-left">Progress</th><th class="p-3.5 text-center">Status</th><th class="p-3.5 text-center">Pelanggaran</th><th class="p-3.5 text-right">Aksi</th></tr>
+                  </thead>
+                  <tbody id="proctoringTbody"></tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+
+          <!-- ============ MODULE: RESULTS ============ -->
+          <section id="module-results" class="workspace-module hidden space-y-5">
+            <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 flex items-center justify-between flex-wrap gap-3">
+              <h3 class="text-sm font-extrabold text-slate-900">Filter Sesi Token</h3>
+              <select id="resultsTokenFilter" onchange="renderResultsModule()" class="px-3 py-2.5 rounded-xl border border-slate-300 text-sm bg-white"></select>
+            </div>
+
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <div class="p-4 rounded-2xl bg-white border border-slate-200 shadow-sm"><div class="text-2xl font-extrabold text-brand-900" id="resKpiAvg">0.0</div><div class="text-[11px] font-semibold text-slate-500">Rata-rata</div></div>
+              <div class="p-4 rounded-2xl bg-white border border-slate-200 shadow-sm"><div class="text-2xl font-extrabold text-emerald-600" id="resKpiPassRate">0%</div><div class="text-[11px] font-semibold text-slate-500">Ketuntasan</div></div>
+              <div class="p-4 rounded-2xl bg-white border border-slate-200 shadow-sm"><div class="text-2xl font-extrabold text-indigo-600" id="resKpiFinished">0</div><div class="text-[11px] font-semibold text-slate-500">Selesai</div></div>
+              <div class="p-4 rounded-2xl bg-white border border-slate-200 shadow-sm"><div class="text-2xl font-extrabold text-rose-600" id="resKpiLocked">0</div><div class="text-[11px] font-semibold text-slate-500">Terkunci</div></div>
+            </div>
+
+            <div class="flex items-center gap-2 flex-wrap">
+              <button type="button" id="resSubTabGradesBtn" onclick="switchResultsSubTab('grades')" class="px-4 py-2 rounded-xl text-xs font-bold bg-brand-900 text-white transition">Daftar Nilai</button>
+              <button type="button" id="resSubTabItemsBtn" onclick="switchResultsSubTab('items')" class="px-4 py-2 rounded-xl text-xs font-bold bg-slate-100 text-slate-700 hover:bg-slate-200 transition">Analisis Butir Soal</button>
+              <div class="flex-1"></div>
+              <button type="button" onclick="exportResultsCsv()" class="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-brand-900 text-white text-xs font-bold transition">Export CSV</button>
+              <button type="button" onclick="printOfficialExamReport()" class="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition">Berita Acara</button>
+            </div>
+
+            <div id="resultsGradesPane" class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-x-auto">
+              <table class="w-full text-sm">
+                <thead class="bg-slate-50 text-slate-500 text-xs">
+                  <tr><th class="p-3.5 text-left">NIS</th><th class="p-3.5 text-left">Nama</th><th class="p-3.5 text-left">Kelas</th><th class="p-3.5 text-center">Benar/Salah</th><th class="p-3.5 text-center">Skor</th><th class="p-3.5 text-center">Status</th><th class="p-3.5 text-center">Pelanggaran</th></tr>
+                </thead>
+                <tbody id="resultsGradesTbody"></tbody>
+              </table>
+            </div>
+
+            <div id="resultsItemsPane" class="hidden bg-white rounded-2xl border border-slate-200 shadow-sm overflow-x-auto">
+              <table class="w-full text-sm">
+                <thead class="bg-slate-50 text-slate-500 text-xs">
+                  <tr><th class="p-3.5 text-center">No</th><th class="p-3.5 text-left">Pertanyaan</th><th class="p-3.5 text-center">Kunci</th><th class="p-3.5 text-center">Indeks Kesukaran</th><th class="p-3.5 text-center">Kategori</th></tr>
+                </thead>
+                <tbody id="resultsItemsTbody"></tbody>
+              </table>
+            </div>
+          </section>
+
+        </main>
+      </div>
     </div>
-  `;
-  window.print();
-}
+  </div>
 
-function refreshMixStatus() {
-  const left = Number(document.getElementById("mixRatioSlider")?.value ?? 20);
-  const right = 40 - left;
-  const lEl = document.getElementById("mixLeftCount");
-  const rEl = document.getElementById("mixRightCount");
-  if (lEl) lEl.textContent = String(left);
-  if (rEl) rEl.textContent = String(right);
-}
+  <!-- ===================================================================== -->
+  <!-- VIEW 3 : STUDENT CBT -->
+  <!-- ===================================================================== -->
+  <div id="studentCbtView" class="hidden min-h-screen bg-slate-100 relative">
 
-function getMixedQuestions() {
-  const id1 = document.getElementById("mixSource1Select")?.value;
-  const id2 = document.getElementById("mixSource2Select")?.value;
-  const left = Number(document.getElementById("mixRatioSlider")?.value ?? 20);
-  const b1 = db.batches.find(b => b.batch_id === id1) || db.batches[0];
-  const b2 = db.batches.find(b => b.batch_id === id2) || db.batches[0];
-  if (!b1 || !b2) return [];
-  return [...(b1.questions || []).slice(0, left), ...(b2.questions || []).slice(0, 40 - left)];
-}
-
-async function saveCombinedBatch40() {
-  const mixed = getMixedQuestions();
-  const title = (document.getElementById("mixNewTitleInput")?.value || "").trim() || `Paket Gabungan SMATECH (${new Date().toLocaleDateString("id-ID")})`;
-  if (mixed.length !== 40) return;
-
-  const batchId = `MIX-${Date.now().toString().slice(-6)}`;
-  const teacher = runtime.activeTeacher || db.teachers[0];
-  const newBatch = {
-    batch_id: batchId,
-    judul: title,
-    kelas: "Kelas X",
-    topik: "Gabungan Lintas Batch",
-    pembuat_id: teacher.id,
-    pembuat_nama: teacher.name,
-    tanggal: new Date().toISOString().slice(0, 10),
-    jumlah_soal: 40,
-    questions: mixed.map((q, i) => ({ ...q, question_id: `${batchId}-Q${i + 1}`, batch_id: batchId, nomor: i + 1 }))
-  };
-
-  db.batches.unshift(newBatch);
-  saveDb();
-  if (isApiReady()) {
-    try { await smatechApi("saveBatch40", { batch: newBatch, questions: newBatch.questions }); } catch (_) {}
-  }
-  refreshAllTeacherViews();
-  showToast("Paket gabungan 40 soal berhasil disimpan ke Bank Soal!", "success");
-}
-
-function exportMixedCsv() {
-  const mixed = getMixedQuestions();
-  const rows = [["No", "Pertanyaan", "Opsi_A", "Opsi_B", "Opsi_C", "Opsi_D", "Opsi_E", "Kunci"]];
-  mixed.forEach((q, i) => rows.push([i + 1, q.pertanyaan, q.opsi_a, q.opsi_b, q.opsi_c, q.opsi_d, q.opsi_e, q.kunci]));
-  downloadCsv("SMATECH_Paket_Gabungan_40.csv", rows);
-}
-
-// =========================================================================
-// MODULE 4: DATA SISWA
-// =========================================================================
-function renderStudentDirectory() {
-  const q = (document.getElementById("studentSearchInput")?.value || "").toLowerCase();
-  const cls = document.getElementById("studentClassFilterSelect")?.value || "ALL";
-  const tbody = document.getElementById("studentDirectoryTbody");
-  if (!tbody) return;
-
-  const filtered = db.students.filter(s => {
-    const matchText = !q || String(s.nis).includes(q) || String(s.nama).toLowerCase().includes(q);
-    const matchCls = cls === "ALL" ||
-      (cls === "PREFIX_X" && String(s.kelas).startsWith("X-")) ||
-      (cls === "PREFIX_XI" && String(s.kelas).startsWith("XI-"));
-    return matchText && matchCls;
-  });
-
-  tbody.innerHTML = filtered.map(s => `
-    <tr>
-      <td class="p-3.5 font-mono font-bold text-slate-800">${escapeHtml(s.nis)}</td>
-      <td class="p-3.5 font-semibold text-slate-900">${escapeHtml(s.nama)}</td>
-      <td class="p-3.5"><span class="px-2 py-0.5 rounded bg-slate-100 font-bold text-slate-700">${escapeHtml(s.kelas)}</span></td>
-      <td class="p-3.5 text-center">
-        <span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold ${s.status === "AKTIF" ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-slate-100 text-slate-500"}">
-          ${escapeHtml(s.status)}
-        </span>
-      </td>
-      <td class="p-3.5 text-right">
-        <button type="button" onclick="toggleStudentActive('${escapeHtml(s.nis)}')"
-          class="px-2.5 py-1 rounded-lg border border-slate-300 hover:bg-slate-100 text-[11px] font-bold text-slate-700">
-          Ubah Status
-        </button>
-      </td>
-    </tr>
-  `).join("");
-}
-
-function toggleStudentActive(nis) {
-  const st = db.students.find(s => s.nis === nis);
-  if (!st) return;
-  st.status = st.status === "AKTIF" ? "NONAKTIF" : "AKTIF";
-  saveDb();
-  renderStudentDirectory();
-}
-
-function openImportStudentsModal() {
-  openModal("importStudentsModal");
-}
-
-function fillSampleImportStudents() {
-  document.getElementById("importStudentsTextarea").value =
-    "261020; Farhan Maulana; X-3\n261021; Salsa Bila Putri; X-4\n262010; Bagus Setiawan; XI-2";
-}
-
-async function processStudentBulkImport() {
-  const raw = (document.getElementById("importStudentsTextarea")?.value || "").trim();
-  if (!raw) return;
-  const lines = raw.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-  const addedList = [];
-
-  lines.forEach(line => {
-    const [nis, nama, kelas] = line.split(/[;,]/).map(x => (x || "").trim());
-    if (nis && nama && kelas && !db.students.some(s => s.nis === nis)) {
-      const item = { nis, nama, kelas, status: "AKTIF" };
-      db.students.push(item);
-      addedList.push(item);
-    }
-  });
-
-  saveDb();
-  if (isApiReady() && addedList.length > 0) {
-    try { await smatechApi("importStudents", { students: addedList }); } catch (_) {}
-  }
-  closeModal("importStudentsModal");
-  refreshAllTeacherViews();
-  showToast(`${addedList.length} siswa baru berhasil diimpor.`, "success");
-}
-
-function printStudentExamCards() {
-  const printEl = document.getElementById("printContainer");
-  if (!printEl) return;
-  printEl.innerHTML = `
-    <div style="font-family: sans-serif; display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px;">
-      ${db.students.map(s => `
-        <div style="border: 1.5px solid #0f172a; border-radius: 8px; padding: 12px;">
-          <div style="font-size: 11px; font-weight: bold; color: #1e3a8a; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px; margin-bottom: 6px;">
-            KARTU PESERTA CBT SMATECH • SMAN 1 GONDANGLEGI
-          </div>
-          <div style="font-size: 12px; line-height: 1.5;">
-            <div><strong>NIS:</strong> ${escapeHtml(s.nis)}</div>
-            <div><strong>Nama:</strong> ${escapeHtml(s.nama)}</div>
-            <div><strong>Kelas:</strong> ${escapeHtml(s.kelas)}</div>
-          </div>
+    <!-- STEP: PREFLIGHT -->
+    <div id="cbtPreflightStep" class="min-h-screen flex items-center justify-center p-4">
+      <div class="w-full max-w-md bg-white rounded-3xl border border-slate-200 shadow-xl p-6 space-y-5">
+        <div class="text-center space-y-1">
+          <div class="w-12 h-12 mx-auto rounded-2xl bg-brand-900 text-cyan-300 flex items-center justify-center"><i data-lucide="clipboard-check" class="w-6 h-6"></i></div>
+          <h2 id="preflightExamTitle" class="text-lg font-extrabold text-slate-900">—</h2>
+          <p id="preflightStudentLine" class="text-xs text-slate-500">—</p>
         </div>
-      `).join("")}
+        <div class="grid grid-cols-2 gap-3 text-center">
+          <div class="p-3 rounded-xl bg-slate-50 border border-slate-200"><div class="text-[10px] font-bold text-slate-400 uppercase">Token</div><div id="preflightTokenText" class="font-mono font-extrabold text-brand-900">—</div></div>
+          <div class="p-3 rounded-xl bg-slate-50 border border-slate-200"><div class="text-[10px] font-bold text-slate-400 uppercase">Durasi</div><div id="preflightDurationText" class="font-bold text-slate-800">—</div></div>
+          <div class="p-3 rounded-xl bg-slate-50 border border-slate-200"><div class="text-[10px] font-bold text-slate-400 uppercase">KKM</div><div id="preflightKkmText" class="font-bold text-slate-800">—</div></div>
+          <div class="p-3 rounded-xl bg-slate-50 border border-slate-200"><div class="text-[10px] font-bold text-slate-400 uppercase">Pelanggaran</div><div id="preflightMaxCheatText" class="font-bold text-slate-800">—</div></div>
+        </div>
+        <div class="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-[11px] leading-relaxed">
+          Setelah ujian dimulai, jangan pindah tab, minimalkan jendela, atau keluar dari layar penuh. Pelanggaran akan tercatat otomatis.
+        </div>
+        <button type="button" onclick="startActiveCbtSession()" class="w-full py-3 rounded-xl bg-brand-900 hover:bg-brand-800 text-white text-sm font-extrabold transition">Mulai Ujian</button>
+        <button type="button" onclick="exitCbtToGate()" class="w-full py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition">Kembali</button>
+      </div>
     </div>
-  `;
-  window.print();
-}
 
-// =========================================================================
-// MODULE 5: UJIAN LIVE, TOKEN & PROCTORING
-// =========================================================================
-function populateNewTokenCode() {
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  let code = "SMG";
-  for (let i = 0; i < 3; i++) code += chars[Math.floor(Math.random() * chars.length)];
-  const inp = document.getElementById("liveTokenInput");
-  if (inp) inp.value = code;
-}
+    <!-- STEP: ACTIVE -->
+    <div id="cbtActiveStep" class="hidden relative min-h-screen flex flex-col">
+      <div id="cbtWatermarkLayer" class="pointer-events-none fixed inset-0 z-0 opacity-[0.05] overflow-hidden select-none"></div>
 
-async function createNewTokenSession() {
-  const judul = (document.getElementById("liveExamTitleInput")?.value || "").trim() || "Ujian Informatika SMATECH";
-  const batchId = document.getElementById("liveBatchSelect")?.value || db.batches[0]?.batch_id;
-  const tokenCode = (document.getElementById("liveTokenInput")?.value || "").trim().toUpperCase();
-  const targetKelas = document.getElementById("liveTargetClassSelect")?.value || "ALL";
-  const durasi = Number(document.getElementById("liveDurationInput")?.value || 60);
-  const kkm = Number(document.getElementById("liveKkmInput")?.value || 75);
-  const maxCheat = Number(document.getElementById("liveMaxCheatSelect")?.value || 3);
+      <header class="relative z-10 bg-slate-900 text-white px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
+        <div id="cbtTopStudentPill" class="text-xs font-bold truncate">—</div>
+        <div class="flex items-center gap-3">
+          <span id="cbtViolationShield" class="px-3 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 tabular-nums bg-emerald-500/15 border-emerald-500/30 text-emerald-300">
+            <i data-lucide="shield" class="w-3.5 h-3.5"></i><span id="cbtViolationText">Pelanggaran: 0 / 3</span>
+          </span>
+          <span id="cbtTimerText" class="font-mono text-lg font-extrabold tabular-nums">60:00</span>
+        </div>
+      </header>
 
-  if (tokenCode.length !== 6) {
-    showToast("Kode token wajib 6 karakter.", "error");
-    return;
-  }
+      <main class="relative z-10 flex-1 w-full max-w-3xl mx-auto p-4 sm:p-6 grid lg:grid-cols-[1fr_260px] gap-5 items-start">
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-6 space-y-4">
+          <div class="flex items-center justify-between gap-3">
+            <div class="flex items-center gap-2">
+              <span id="cbtQNumLabel" class="px-2.5 py-1 rounded-lg bg-brand-900 text-white font-mono font-extrabold text-sm">1</span>
+              <span id="cbtQLevelTag" class="px-2 py-0.5 rounded bg-slate-100 text-slate-600 font-mono text-[11px] font-bold">C2</span>
+            </div>
+            <span id="cbtQStateBadge" class="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-slate-200/80 text-slate-600">Belum Dijawab</span>
+          </div>
+          <p id="cbtQuestionBody" class="text-sm sm:text-base font-semibold text-slate-900 leading-relaxed">—</p>
+          <div id="cbtOptionsStack" class="space-y-2.5"></div>
+        </div>
 
-  const newToken = {
-    token_code: tokenCode,
-    judul_ujian: judul,
-    batch_id: batchId,
-    target_kelas: targetKelas,
-    durasi_menit: durasi,
-    kkm,
-    max_pelanggaran: maxCheat,
-    acak_soal: Boolean(document.getElementById("liveRandomizeCheck")?.checked),
-    wajib_fullscreen: Boolean(document.getElementById("liveFullscreenCheck")?.checked),
-    tampil_nilai: Boolean(document.getElementById("liveShowScoreCheck")?.checked),
-    status: "AKTIF",
-    dibuat_oleh: runtime.activeTeacher?.name || "Guru Informatika"
-  };
+        <div class="space-y-4">
+          <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
+            <div class="flex items-center justify-between text-xs font-bold text-slate-600 mb-3">
+              <span>Navigasi Soal</span><span id="cbtAnsweredCounter" class="font-mono tabular-nums">0 / 40</span>
+            </div>
+            <div id="cbtMatrixGrid" class="grid grid-cols-5 gap-1.5"></div>
+          </div>
+          <button type="button" onclick="toggleCbtDoubtFlag()" class="w-full px-3 py-2.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-xs font-bold transition">
+            <span id="cbtFlagBtnLabel">Tandai Ragu-Ragu</span>
+          </button>
+          <button type="button" onclick="triggerSimulatedAntiCheat()" class="w-full px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-500 text-[11px] font-bold transition">Uji Anti-Cheat (Simulasi)</button>
+        </div>
+      </main>
 
-  db.tokens.unshift(newToken);
-  saveDb();
-  if (isApiReady()) {
-    try { await smatechApi("createToken", { token: newToken }); } catch (_) {}
-  }
-  populateNewTokenCode();
-  refreshAllTeacherViews();
-  showToast(`Token ${tokenCode} berhasil diterbitkan!`, "success");
-}
+      <footer class="relative z-10 bg-white border-t border-slate-200 px-4 py-3 flex items-center justify-between gap-3">
+        <button type="button" id="cbtPrevBtn" onclick="stepCbtQuestion(-1)" class="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition disabled:opacity-40">← Sebelumnya</button>
+        <button type="button" onclick="openCbtSubmitModal()" class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold transition">Kumpulkan</button>
+        <button type="button" id="cbtNextBtn" onclick="stepCbtQuestion(1)" class="px-4 py-2 rounded-xl bg-brand-900 hover:bg-brand-800 text-white text-xs font-bold transition disabled:opacity-40">Selanjutnya →</button>
+      </footer>
+    </div>
 
-function renderActiveTokensGrid() {
-  const grid = document.getElementById("activeTokensGrid");
-  const pill = document.getElementById("tokenActiveSummaryPill");
-  if (pill) pill.textContent = `${db.tokens.length} Token`;
-  if (!grid) return;
-
-  grid.innerHTML = db.tokens.map(t => {
-    const isActive = t.status === "AKTIF";
-    return `
-      <div class="p-4 rounded-2xl border ${isActive ? "border-emerald-200 bg-emerald-50/30" : "border-slate-200 bg-slate-50"} flex flex-wrap items-center justify-between gap-3">
+    <!-- STEP: SUMMARY -->
+    <div id="cbtSummaryStep" class="hidden min-h-screen flex items-center justify-center p-4">
+      <div class="w-full max-w-md bg-white rounded-3xl border border-slate-200 shadow-xl p-6 space-y-5 text-center">
+        <div id="summaryHeroIcon" class="w-16 h-16 rounded-2xl mx-auto flex items-center justify-center bg-emerald-100 text-emerald-600">
+          <i data-lucide="check-circle-2" class="w-8 h-8"></i>
+        </div>
         <div>
-          <div class="flex items-center gap-2">
-            <span class="px-2.5 py-1 rounded-lg bg-brand-900 text-cyan-300 font-mono font-extrabold text-sm tracking-widest">${escapeHtml(t.token_code)}</span>
-            <span class="px-2 py-0.5 rounded-full text-[11px] font-bold ${isActive ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-700"}">${escapeHtml(t.status)}</span>
-          </div>
-          <h4 class="text-xs sm:text-sm font-extrabold text-slate-900 mt-1.5">${escapeHtml(t.judul_ujian)}</h4>
-          <p class="text-[11px] text-slate-500">Target: ${escapeHtml(t.target_kelas)} • Durasi: ${t.durasi_menit} mnt • KKM: ${t.kkm} • Maks Cheat: ${t.max_pelanggaran}x</p>
+          <span id="summaryStatusPill" class="px-3 py-1 rounded-full border text-xs font-extrabold uppercase tracking-wide bg-emerald-50 text-emerald-700 border-emerald-200">Ujian Selesai Normal</span>
+          <p id="summarySubtitleText" class="text-sm text-slate-600 mt-3 leading-relaxed">—</p>
         </div>
-        <button type="button" onclick="toggleTokenActive('${escapeHtml(t.token_code)}')"
-          class="px-3 py-2 rounded-xl text-xs font-bold border ${isActive ? "bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100" : "bg-emerald-600 text-white border-emerald-600"}">
-          ${isActive ? "Kunci Token" : "Aktifkan Token"}
-        </button>
+        <div class="grid grid-cols-2 gap-3">
+          <div class="p-4 rounded-2xl bg-slate-50 border border-slate-200">
+            <div class="text-[10px] font-bold text-slate-400 uppercase mb-1">Nilai</div>
+            <div id="summaryScoreNumber" class="text-3xl font-extrabold text-brand-900">—</div>
+          </div>
+          <div class="p-4 rounded-2xl bg-slate-50 border border-slate-200">
+            <div class="text-[10px] font-bold text-slate-400 uppercase mb-1">Benar / Salah</div>
+            <div id="summaryBreakdownNumber" class="text-3xl font-extrabold text-slate-800">—</div>
+            <div id="summaryKkmBadge" class="inline-block mt-0.5 px-2.5 py-0.5 rounded-md text-xs font-extrabold bg-emerald-100 text-emerald-800">TUNTAS</div>
+          </div>
+        </div>
+        <button type="button" onclick="exitCbtToGate()" class="w-full py-3 rounded-xl bg-brand-900 hover:bg-brand-800 text-white text-sm font-extrabold transition">Kembali ke Portal</button>
       </div>
-    `;
-  }).join("");
-}
-
-async function toggleTokenActive(code) {
-  const tok = db.tokens.find(t => t.token_code === code);
-  if (!tok) return;
-  tok.status = tok.status === "AKTIF" ? "TERKUNCI" : "AKTIF";
-  saveDb();
-  if (isApiReady()) {
-    try { await smatechApi("toggleTokenStatus", { tokenCode: code, status: tok.status }); } catch (_) {}
-  }
-  refreshAllTeacherViews();
-  showToast(`Status token ${code} diubah menjadi ${tok.status}.`, "info");
-}
-
-function renderLiveProctoringTable() {
-  const filter = document.getElementById("proctorTokenFilter")?.value || "ALL";
-  const tbody = document.getElementById("proctoringTbody");
-  if (!tbody) return;
-
-  const list = db.results.filter(r => filter === "ALL" || r.token_code === filter);
-  if (list.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="6" class="p-6 text-center text-slate-400">Belum ada aktivitas peserta ujian CBT pada sesi ini.</td></tr>`;
-    return;
-  }
-
-  tbody.innerHTML = list.map((r, idx) => `
-    <tr>
-      <td class="p-3.5">
-        <strong class="text-slate-900 block">${escapeHtml(r.nama_siswa)}</strong>
-        <span class="font-mono text-[11px] text-slate-500">${escapeHtml(r.nis)} • ${escapeHtml(r.kelas)}</span>
-      </td>
-      <td class="p-3.5 font-mono font-bold text-indigo-700">${escapeHtml(r.token_code)}</td>
-      <td class="p-3.5 font-mono">${Object.keys(r.jawaban || {}).length} / 40 Soal</td>
-      <td class="p-3.5 text-center">
-        <span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold ${r.status_ujian === "TERKUNCI" ? "bg-rose-100 text-rose-800" : "bg-emerald-100 text-emerald-800"}">
-          ${escapeHtml(r.status_ujian)}
-        </span>
-      </td>
-      <td class="p-3.5 text-center">
-        <button type="button" onclick="openViolationLogModal(${idx})"
-          class="px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 font-mono font-bold">
-          ${r.jumlah_pelanggaran || 0}x Log
-        </button>
-      </td>
-      <td class="p-3.5 text-right">
-        <button type="button" onclick="resetStudentResult('${escapeHtml(r.token_code)}', '${escapeHtml(r.nis)}')"
-          class="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-bold">
-          Reset / Buka Kunci
-        </button>
-      </td>
-    </tr>
-  `).join("");
-}
-
-function openViolationLogModal(resultIdx) {
-  const r = db.results[resultIdx];
-  if (!r) return;
-  document.getElementById("vLogStudentTitle").textContent = r.nama_siswa;
-  document.getElementById("vLogStudentMeta").textContent = `${r.nis} • ${r.kelas} • Token ${r.token_code}`;
-  const logs = r.log_pelanggaran || [];
-  document.getElementById("vLogListBody").innerHTML = logs.length === 0
-    ? `<p class="text-slate-500 text-center py-4">Tidak ada pelanggaran tercatat.</p>`
-    : logs.map(l => `<div class="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-900"><strong>[${escapeHtml(l.time)}]</strong> ${escapeHtml(l.reason)}</div>`).join("");
-  openModal("violationLogModal");
-}
-
-async function resetStudentResult(tokenCode, nis) {
-  db.results = db.results.filter(r => !(r.token_code === tokenCode && r.nis === nis));
-  saveDb();
-  if (isApiReady()) {
-    try { await smatechApi("resetStudentExam", { tokenCode, nis }); } catch (_) {}
-  }
-  refreshAllTeacherViews();
-  showToast(`Sesi ujian NIS ${nis} berhasil di-reset.`, "success");
-}
-
-// =========================================================================
-// MODULE 6: HASIL, NILAI & ANALISIS
-// =========================================================================
-function switchResultsSubTab(sub) {
-  const isGrades = sub === "grades";
-  document.getElementById("resultsGradesPane")?.classList.toggle("hidden", !isGrades);
-  document.getElementById("resultsItemsPane")?.classList.toggle("hidden", isGrades);
-  document.getElementById("resSubTabGradesBtn").className = isGrades
-    ? "px-4 py-2 rounded-xl text-xs font-bold bg-brand-900 text-white transition"
-    : "px-4 py-2 rounded-xl text-xs font-bold bg-slate-100 text-slate-700 hover:bg-slate-200 transition";
-  document.getElementById("resSubTabItemsBtn").className = !isGrades
-    ? "px-4 py-2 rounded-xl text-xs font-bold bg-brand-900 text-white transition"
-    : "px-4 py-2 rounded-xl text-xs font-bold bg-slate-100 text-slate-700 hover:bg-slate-200 transition";
-}
-
-function renderResultsModule() {
-  const tokenCode = document.getElementById("resultsTokenFilter")?.value || db.tokens[0]?.token_code;
-  const tok = db.tokens.find(t => t.token_code === tokenCode);
-  const kkm = tok?.kkm || 75;
-  const rows = db.results.filter(r => !tokenCode || r.token_code === tokenCode);
-
-  const avg = rows.length ? (rows.reduce((s, r) => s + Number(r.skor || 0), 0) / rows.length).toFixed(1) : "0.0";
-  const passed = rows.filter(r => Number(r.skor || 0) >= kkm).length;
-  const passRate = rows.length ? Math.round((passed / rows.length) * 100) : 0;
-
-  document.getElementById("resKpiAvg").textContent = avg;
-  document.getElementById("resKpiPassRate").textContent = `${passRate}%`;
-  document.getElementById("resKpiFinished").textContent = String(rows.filter(r => r.status_ujian === "SELESAI").length);
-  document.getElementById("resKpiLocked").textContent = String(rows.filter(r => r.status_ujian === "TERKUNCI").length);
-
-  const gBody = document.getElementById("resultsGradesTbody");
-  if (gBody) {
-    gBody.innerHTML = rows.length === 0
-      ? `<tr><td colspan="7" class="p-6 text-center text-slate-400">Belum ada data nilai pada sesi ini.</td></tr>`
-      : rows.map(r => {
-          const tuntas = Number(r.skor || 0) >= kkm;
-          return `
-            <tr>
-              <td class="p-3.5 font-mono font-bold">${escapeHtml(r.nis)}</td>
-              <td class="p-3.5 font-semibold">${escapeHtml(r.nama_siswa)}</td>
-              <td class="p-3.5">${escapeHtml(r.kelas)}</td>
-              <td class="p-3.5 text-center font-mono">${r.benar} / ${r.salah}</td>
-              <td class="p-3.5 text-center font-mono font-extrabold text-brand-900">${r.skor}</td>
-              <td class="p-3.5 text-center">
-                <span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold ${tuntas ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"}">
-                  ${tuntas ? "TUNTAS" : "REMEDIAL"}
-                </span>
-              </td>
-              <td class="p-3.5 text-center font-mono">${r.jumlah_pelanggaran || 0}x</td>
-            </tr>
-          `;
-        }).join("");
-  }
-
-  const batch = db.batches.find(b => b.batch_id === tok?.batch_id) || db.batches[0];
-  const iBody = document.getElementById("resultsItemsTbody");
-  if (iBody && batch) {
-    iBody.innerHTML = (batch.questions || []).map((q, i) => {
-      let correctCnt = 0;
-      rows.forEach(r => { if ((r.jawaban || {})[q.question_id] === q.kunci) correctCnt++; });
-      const pct = rows.length ? Math.round((correctCnt / rows.length) * 100) : 0;
-      const label = rows.length === 0 ? "Belum Ada Data" : pct >= 70 ? "Mudah" : pct >= 35 ? "Sedang" : "Sukar";
-      return `
-        <tr>
-          <td class="p-3.5 text-center font-mono font-bold">${i + 1}</td>
-          <td class="p-3.5 text-slate-800">${escapeHtml(q.pertanyaan)}</td>
-          <td class="p-3.5 text-center font-mono font-extrabold text-indigo-700">${escapeHtml(q.kunci)}</td>
-          <td class="p-3.5 text-center font-mono">${pct}% (${correctCnt}/${rows.length})</td>
-          <td class="p-3.5 text-center font-bold">${label}</td>
-        </tr>
-      `;
-    }).join("");
-  }
-}
-
-function exportResultsCsv() {
-  const tokenCode = document.getElementById("resultsTokenFilter")?.value || "";
-  const rows = db.results.filter(r => !tokenCode || r.token_code === tokenCode);
-  const csvRows = [["NIS", "Nama_Siswa", "Kelas", "Token", "Benar", "Salah", "Skor", "Status", "Pelanggaran"]];
-  rows.forEach(r => csvRows.push([r.nis, r.nama_siswa, r.kelas, r.token_code, r.benar, r.salah, r.skor, r.status_ujian, r.jumlah_pelanggaran || 0]));
-  downloadCsv(`SMATECH_Nilai_${tokenCode || "Semua"}.csv`, csvRows);
-}
-
-function printOfficialExamReport() {
-  const tokenCode = document.getElementById("resultsTokenFilter")?.value || "";
-  const rows = db.results.filter(r => !tokenCode || r.token_code === tokenCode);
-  const printEl = document.getElementById("printContainer");
-  if (!printEl) return;
-  printEl.innerHTML = `
-    <div style="font-family: sans-serif;">
-      <h2 style="text-align:center; margin-bottom:4px;">BERITA ACARA & REKAP NILAI UJIAN CBT SMATECH</h2>
-      <p style="text-align:center; margin-top:0;">SMA NEGERI 1 GONDANGLEGI • Token Sesi: ${escapeHtml(tokenCode)}</p>
-      <table border="1" cellspacing="0" cellpadding="6" style="width:100%; border-collapse:collapse; font-size:12px;">
-        <thead><tr><th>NIS</th><th>Nama Siswa</th><th>Kelas</th><th>Benar</th><th>Skor</th><th>Status</th></tr></thead>
-        <tbody>
-          ${rows.map(r => `<tr><td>${escapeHtml(r.nis)}</td><td>${escapeHtml(r.nama_siswa)}</td><td>${escapeHtml(r.kelas)}</td><td>${r.benar}/40</td><td>${r.skor}</td><td>${escapeHtml(r.status_ujian)}</td></tr>`).join("")}
-        </tbody>
-      </table>
     </div>
-  `;
-  window.print();
-}
+  </div>
 
-// =========================================================================
-// 3. STUDENT CBT ENGINE & ANTI-CHEATING
-// =========================================================================
-function fillQuickStudentDemo() {
-  const nisInp = document.getElementById("cbtNisInput");
-  const tokInp = document.getElementById("cbtTokenCodeInput");
-  if (nisInp) nisInp.value = "261001";
-  if (tokInp) tokInp.value = "SMG26A";
-  lookupStudentByNis("261001");
-}
+  <!-- ===================================================================== -->
+  <!-- MODALS -->
+  <!-- ===================================================================== -->
 
-function lookupStudentByNis(nisVal) {
-  const box = document.getElementById("studentLookupPreview");
-  if (!box) return;
-  const st = db.students.find(s => String(s.nis).trim() === String(nisVal).trim());
-  if (!st) {
-    box.innerHTML = `<div class="text-xs text-slate-500">NIS <strong>${escapeHtml(nisVal || "-")}</strong> belum ditemukan di cache lokal (akan diverifikasi ke server saat masuk).</div>`;
-    return;
-  }
-  box.innerHTML = `
-    <div class="flex items-center justify-between text-xs">
+  <!-- Batch Inspector -->
+  <div id="batchInspectorModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onclick="closeModal('batchInspectorModal')"></div>
+    <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col">
+      <div class="p-4 border-b border-slate-200 flex items-start justify-between gap-3">
+        <div class="min-w-0">
+          <h3 id="inspectorTitle" class="text-base font-extrabold text-slate-900 truncate">—</h3>
+          <p id="inspectorMeta" class="text-[11px] text-slate-500">—</p>
+        </div>
+        <button type="button" onclick="closeModal('batchInspectorModal')" class="p-2 rounded-lg hover:bg-slate-100 text-slate-500"><i data-lucide="x" class="w-5 h-5"></i></button>
+      </div>
+      <div class="p-4 flex items-center justify-between gap-2 border-b border-slate-100">
+        <button type="button" id="inspectorToggleKeysBtn" onclick="toggleInspectorKeys()" class="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition">Tampilkan Kunci & Level</button>
+        <button type="button" onclick="quickCreateTokenFromInspector()" class="px-3 py-1.5 rounded-lg bg-brand-900 hover:bg-brand-800 text-white text-xs font-bold transition">Buat Token</button>
+      </div>
+      <div id="inspectorQuestionsList" class="flex-1 overflow-y-auto p-4 space-y-3"></div>
+    </div>
+  </div>
+
+  <!-- Import Students -->
+  <div id="importStudentsModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onclick="closeModal('importStudentsModal')"></div>
+    <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 space-y-4">
+      <div class="flex items-start justify-between">
+        <div>
+          <h3 class="text-base font-extrabold text-slate-900">Import Data Siswa</h3>
+          <p class="text-[11px] text-slate-500">Format per baris: <code class="font-mono">NIS; Nama; Kelas</code></p>
+        </div>
+        <button type="button" onclick="closeModal('importStudentsModal')" class="p-2 rounded-lg hover:bg-slate-100 text-slate-500"><i data-lucide="x" class="w-5 h-5"></i></button>
+      </div>
+      <textarea id="importStudentsTextarea" rows="8" placeholder="261020; Farhan Maulana; X-3&#10;261021; Salsa Bila Putri; XI-2"
+        class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-600"></textarea>
+      <div class="flex flex-wrap gap-2 justify-end">
+        <button type="button" onclick="fillSampleImportStudents()" class="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition">Isi Contoh</button>
+        <button type="button" onclick="processStudentBulkImport()" class="px-4 py-2 rounded-xl bg-brand-900 hover:bg-brand-800 text-white text-xs font-bold transition">Proses Import</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Violation Log -->
+  <div id="violationLogModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onclick="closeModal('violationLogModal')"></div>
+    <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 space-y-4">
+      <div class="flex items-start justify-between">
+        <div>
+          <h3 id="vLogStudentTitle" class="text-base font-extrabold text-slate-900">Log Pelanggaran</h3>
+          <p id="vLogStudentMeta" class="text-[11px] text-slate-500">—</p>
+        </div>
+        <button type="button" onclick="closeModal('violationLogModal')" class="p-2 rounded-lg hover:bg-slate-100 text-slate-500"><i data-lucide="x" class="w-5 h-5"></i></button>
+      </div>
+      <div id="vLogListBody" class="space-y-2 max-h-80 overflow-y-auto"></div>
+    </div>
+  </div>
+
+  <!-- Backup System -->
+  <div id="backupSystemModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onclick="closeModal('backupSystemModal')"></div>
+    <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4">
+      <div class="flex items-start justify-between">
+        <div>
+          <h3 class="text-base font-extrabold text-slate-900">Backup & Reset Data</h3>
+          <p class="text-[11px] text-slate-500">Ekspor, pulihkan, atau kembalikan data demo.</p>
+        </div>
+        <button type="button" onclick="closeModal('backupSystemModal')" class="p-2 rounded-lg hover:bg-slate-100 text-slate-500"><i data-lucide="x" class="w-5 h-5"></i></button>
+      </div>
+      <button type="button" onclick="downloadJsonBackup()" class="w-full py-2.5 rounded-xl bg-brand-900 hover:bg-brand-800 text-white text-sm font-bold transition">Unduh Backup JSON</button>
+      <label class="block w-full py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-bold text-center transition cursor-pointer">
+        Pulihkan dari JSON
+        <input type="file" accept=".json,application/json" onchange="restoreJsonBackup(event)" class="hidden" />
+      </label>
+      <button type="button" onclick="resetDemoDatabase()" class="w-full py-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-sm font-bold transition">Reset ke Data Demo</button>
+    </div>
+  </div>
+
+  <!-- Anti-Cheat Warning -->
+  <div id="antiCheatWarningModal" class="hidden fixed inset-0 z-[60] flex items-center justify-center p-4">
+    <div class="absolute inset-0 bg-rose-950/70 backdrop-blur-sm"></div>
+    <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4 text-center">
+      <div class="w-14 h-14 mx-auto rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center"><i data-lucide="alert-triangle" class="w-7 h-7"></i></div>
       <div>
-        <strong class="text-slate-900 block">${escapeHtml(st.nama)}</strong>
-        <span class="text-slate-500">NIS: ${escapeHtml(st.nis)} • Kelas: <strong>${escapeHtml(st.kelas)}</strong></span>
+        <h3 class="text-base font-extrabold text-slate-900">Peringatan Pengawasan!</h3>
+        <p id="acModalReason" class="text-sm text-slate-600 mt-1">—</p>
       </div>
-      <span class="px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-800 font-bold">${escapeHtml(st.status)}</span>
+      <div id="acModalCounter" class="px-3 py-1.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200 text-xs font-extrabold inline-block">0 / 3</div>
+      <button type="button" onclick="acknowledgeAntiCheatWarning()" class="w-full py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-sm font-bold transition">Saya Mengerti</button>
     </div>
-  `;
-}
+  </div>
 
-async function handleStudentCbtLogin(e) {
-  if (e) e.preventDefault();
-  const nis = (document.getElementById("cbtNisInput")?.value || "").trim();
-  const tokenCode = (document.getElementById("cbtTokenCodeInput")?.value || "").trim().toUpperCase();
-  const alertBox = document.getElementById("studentLoginAlertBox");
-  alertBox?.classList.add("hidden");
+  <!-- Confirm Submit -->
+  <div id="confirmCbtSubmitModal" class="hidden fixed inset-0 z-[60] flex items-center justify-center p-4">
+    <div class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onclick="closeModal('confirmCbtSubmitModal')"></div>
+    <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4 text-center">
+      <div class="w-14 h-14 mx-auto rounded-2xl bg-brand-50 text-brand-700 flex items-center justify-center"><i data-lucide="file-check" class="w-7 h-7"></i></div>
+      <div>
+        <h3 class="text-base font-extrabold text-slate-900">Kumpulkan Ujian?</h3>
+        <p id="confirmSubmitSummary" class="text-sm text-slate-600 mt-1 leading-relaxed">—</p>
+      </div>
+      <div class="grid grid-cols-2 gap-2">
+        <button type="button" onclick="closeModal('confirmCbtSubmitModal')" class="py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-bold transition">Batal</button>
+        <button type="button" onclick="completeStudentExam('SELESAI','Ujian dikumpulkan oleh siswa.')" class="py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold transition">Kumpulkan</button>
+      </div>
+    </div>
+  </div>
 
-  try {
-    let student, token, questions;
+  <!-- Print container -->
+  <div id="printContainer"></div>
 
-    if (isApiReady()) {
-      const res = await smatechApi("verifyStudentToken", { nis, tokenCode });
-      student = res.student;
-      token = {
-        ...res.token,
-        durasi_menit: Number(res.token.durasi_menit || 60),
-        kkm: Number(res.token.kkm || 75),
-        max_pelanggaran: Number(res.token.max_pelanggaran || 3),
-        acak_soal: String(res.token.acak_soal) !== "false" && res.token.acak_soal !== false,
-        wajib_fullscreen: String(res.token.wajib_fullscreen) !== "false" && res.token.wajib_fullscreen !== false,
-        tampil_nilai: String(res.token.tampil_nilai) !== "false" && res.token.tampil_nilai !== false
-      };
-      questions = res.questions;
-    } else {
-      student = db.students.find(s => s.nis === nis && s.status === "AKTIF");
-      if (!student) throw new Error("NIS tidak terdaftar atau nonaktif.");
-      token = db.tokens.find(t => t.token_code === tokenCode && t.status === "AKTIF");
-      if (!token) throw new Error("Token ujian tidak valid atau sudah dikunci.");
-      const batch = db.batches.find(b => b.batch_id === token.batch_id);
-      questions = batch?.questions || [];
-    }
-
-    if (!questions || questions.length === 0) {
-      throw new Error("Paket soal pada token ini kosong.");
-    }
-
-    const orderedQuestions = token.acak_soal ? shuffleArray(questions) : [...questions];
-    runtime.cbtSession = {
-      student,
-      token,
-      questions: orderedQuestions,
-      currentIdx: 0,
-      answers: {},
-      doubts: {},
-      violations: [],
-      remainingSec: (token.durasi_menit || 60) * 60,
-      startedAt: new Date().toISOString(),
-      isRunning: false
-    };
-
-    document.getElementById("preflightExamTitle").textContent = token.judul_ujian;
-    document.getElementById("preflightStudentLine").textContent = `${student.nama} • NIS ${student.nis} • Kelas ${student.kelas}`;
-    document.getElementById("preflightTokenText").textContent = token.token_code;
-    document.getElementById("preflightDurationText").textContent = `${token.durasi_menit} Menit`;
-    document.getElementById("preflightKkmText").textContent = String(token.kkm);
-    document.getElementById("preflightMaxCheatText").textContent = `Maks. ${token.max_pelanggaran}x`;
-
-    document.getElementById("authGateView")?.classList.add("hidden");
-    document.getElementById("studentCbtView")?.classList.remove("hidden");
-    document.getElementById("cbtPreflightStep")?.classList.remove("hidden");
-    document.getElementById("cbtActiveStep")?.classList.add("hidden");
-    document.getElementById("cbtSummaryStep")?.classList.add("hidden");
-    renderIcons();
-  } catch (err) {
-    if (alertBox) {
-      alertBox.textContent = err.message || "Gagal memverifikasi peserta ujian.";
-      alertBox.classList.remove("hidden");
-    }
-  }
-}
-
-function startActiveCbtSession() {
-  const s = runtime.cbtSession;
-  if (!s) return;
-  s.isRunning = true;
-
-  if (s.token.wajib_fullscreen && document.documentElement.requestFullscreen) {
-    document.documentElement.requestFullscreen().catch(() => {});
-  }
-
-  document.getElementById("cbtPreflightStep")?.classList.add("hidden");
-  document.getElementById("cbtActiveStep")?.classList.remove("hidden");
-  document.getElementById("cbtTopStudentPill").textContent = `${s.student.nis} • ${s.student.nama} (${s.student.kelas})`;
-
-  const wm = document.getElementById("cbtWatermarkLayer");
-  if (wm) {
-    const label = `${s.student.nis} - ${s.student.nama} - ${s.token.token_code}`;
-    wm.innerHTML = `<div class="p-8 text-sm font-mono font-bold text-slate-900 leading-loose">${Array(60).fill(label).join(" &nbsp;&bull;&nbsp; ")}</div>`;
-  }
-
-  updateViolationHud();
-  renderCurrentCbtQuestion();
-  renderCbtMatrix();
-
-  clearInterval(runtime.timerInterval);
-  runtime.timerInterval = setInterval(() => {
-    if (!runtime.cbtSession?.isRunning) return;
-    runtime.cbtSession.remainingSec -= 1;
-    const sec = Math.max(0, runtime.cbtSession.remainingSec);
-    const mm = String(Math.floor(sec / 60)).padStart(2, "0");
-    const ss = String(sec % 60).padStart(2, "0");
-    const tEl = document.getElementById("cbtTimerText");
-    if (tEl) tEl.textContent = `${mm}:${ss}`;
-    if (sec <= 0) {
-      completeStudentExam("SELESAI", "Waktu pengerjaan telah habis.");
-    }
-  }, 1000);
-}
-
-function renderCurrentCbtQuestion() {
-  const s = runtime.cbtSession;
-  if (!s) return;
-  const q = s.questions[s.currentIdx];
-  if (!q) return;
-
-  document.getElementById("cbtQNumLabel").textContent = String(s.currentIdx + 1);
-  document.getElementById("cbtQLevelTag").textContent = q.level_kognitif || "C2";
-  document.getElementById("cbtQuestionBody").textContent = q.pertanyaan;
-
-  const chosen = s.answers[q.question_id];
-  const isDoubt = Boolean(s.doubts[q.question_id]);
-  const badge = document.getElementById("cbtQStateBadge");
-  if (badge) {
-    badge.textContent = isDoubt ? "Ragu-Ragu" : chosen ? `Terjawab (${chosen})` : "Belum Dijawab";
-  }
-
-  const stack = document.getElementById("cbtOptionsStack");
-  if (stack) {
-    stack.innerHTML = ["A", "B", "C", "D", "E"].map(opt => {
-      const text = q[`opsi_${opt.toLowerCase()}`];
-      const active = chosen === opt;
-      return `
-        <button type="button" onclick="selectCbtAnswer('${opt}')"
-          class="w-full text-left p-3.5 rounded-2xl border-2 transition flex items-center gap-3 ${active ? "border-indigo-600 bg-indigo-50/70 text-brand-950 font-bold" : "border-slate-200 hover:border-slate-300 bg-white text-slate-800"}">
-          <span class="w-8 h-8 rounded-xl flex items-center justify-center font-mono text-xs font-extrabold shrink-0 ${active ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-700"}">${opt}</span>
-          <span class="text-xs sm:text-sm">${escapeHtml(text)}</span>
-        </button>
-      `;
-    }).join("");
-  }
-
-  document.getElementById("cbtPrevBtn").disabled = s.currentIdx === 0;
-  document.getElementById("cbtNextBtn").disabled = s.currentIdx === s.questions.length - 1;
-}
-
-function selectCbtAnswer(opt) {
-  const s = runtime.cbtSession;
-  if (!s) return;
-  const q = s.questions[s.currentIdx];
-  s.answers[q.question_id] = opt;
-  renderCurrentCbtQuestion();
-  renderCbtMatrix();
-}
-
-function toggleCbtDoubtFlag() {
-  const s = runtime.cbtSession;
-  if (!s) return;
-  const q = s.questions[s.currentIdx];
-  s.doubts[q.question_id] = !s.doubts[q.question_id];
-  renderCurrentCbtQuestion();
-  renderCbtMatrix();
-}
-
-function stepCbtQuestion(delta) {
-  const s = runtime.cbtSession;
-  if (!s) return;
-  const next = s.currentIdx + delta;
-  if (next >= 0 && next < s.questions.length) {
-    s.currentIdx = next;
-    renderCurrentCbtQuestion();
-    renderCbtMatrix();
-  }
-}
-
-function jumpCbtQuestion(idx) {
-  if (!runtime.cbtSession) return;
-  runtime.cbtSession.currentIdx = idx;
-  renderCurrentCbtQuestion();
-  renderCbtMatrix();
-}
-
-function renderCbtMatrix() {
-  const s = runtime.cbtSession;
-  const grid = document.getElementById("cbtMatrixGrid");
-  if (!s || !grid) return;
-
-  const answeredCount = Object.keys(s.answers).length;
-  document.getElementById("cbtAnsweredCounter").textContent = `${answeredCount} / ${s.questions.length}`;
-
-  grid.innerHTML = s.questions.map((q, idx) => {
-    const isCurrent = idx === s.currentIdx;
-    const isDoubt = Boolean(s.doubts[q.question_id]);
-    const isAnswered = Boolean(s.answers[q.question_id]);
-    let cls = "bg-slate-100 border-slate-300 text-slate-700";
-    if (isDoubt) cls = "bg-amber-400 border-amber-500 text-slate-950";
-    else if (isAnswered) cls = "bg-emerald-600 border-emerald-700 text-white";
-    if (isCurrent) cls += " ring-2 ring-indigo-600";
-    return `<button type="button" onclick="jumpCbtQuestion(${idx})" class="h-9 rounded-lg border font-mono text-xs font-bold ${cls}">${idx + 1}</button>`;
-  }).join("");
-}
-
-function updateViolationHud() {
-  const s = runtime.cbtSession;
-  if (!s) return;
-  const count = s.violations.length;
-  const max = s.token.max_pelanggaran || 3;
-  const el = document.getElementById("cbtViolationText");
-  if (el) el.textContent = `Pelanggaran: ${count} / ${max}`;
-}
-
-function triggerSimulatedAntiCheat() {
-  handleAntiCheatViolation("Simulasi Pengawas: Percobaan Keluar Area Ujian", true);
-}
-
-function handleAntiCheatViolation(reason, bypassDebounce = false) {
-  const s = runtime.cbtSession;
-  if (!s || !s.isRunning) return;
-  const now = Date.now();
-  if (!bypassDebounce && now - runtime.lastCheatAt < 1800) return;
-  runtime.lastCheatAt = now;
-
-  playBeep();
-  s.violations.push({ time: new Date().toLocaleTimeString("id-ID"), reason });
-  updateViolationHud();
-
-  const max = s.token.max_pelanggaran || 3;
-  if (s.violations.length >= max) {
-    completeStudentExam("TERKUNCI", `Melebihi batas maksimal pelanggaran (${max}x).`);
-    return;
-  }
-
-  document.getElementById("acModalReason").textContent = reason;
-  document.getElementById("acModalCounter").textContent = `${s.violations.length} / ${max}`;
-  openModal("antiCheatWarningModal");
-}
-
-function acknowledgeAntiCheatWarning() {
-  closeModal("antiCheatWarningModal");
-  if (runtime.cbtSession?.token?.wajib_fullscreen && document.documentElement.requestFullscreen) {
-    document.documentElement.requestFullscreen().catch(() => {});
-  }
-}
-
-function openCbtSubmitModal() {
-  const s = runtime.cbtSession;
-  if (!s) return;
-  const answered = Object.keys(s.answers).length;
-  document.getElementById("confirmSubmitSummary").textContent =
-    `Anda telah menjawab ${answered} dari ${s.questions.length} soal. Yakin ingin mengumpulkan ujian sekarang?`;
-  openModal("confirmCbtSubmitModal");
-}
-
-async function completeStudentExam(statusUjian, note) {
-  const s = runtime.cbtSession;
-  if (!s) return;
-  s.isRunning = false;
-  clearInterval(runtime.timerInterval);
-  closeModal("confirmCbtSubmitModal");
-  closeModal("antiCheatWarningModal");
-
-  if (document.fullscreenElement && document.exitFullscreen) {
-    document.exitFullscreen().catch(() => {});
-  }
-
-  let benar = 0;
-  s.questions.forEach(q => {
-    if (s.answers[q.question_id] === q.kunci) benar += 1;
-  });
-  const salah = s.questions.length - benar;
-  const skor = Math.round((benar / s.questions.length) * 100);
-
-  const resultPayload = {
-    result_id: `RES-${Date.now()}`,
-    token_code: s.token.token_code,
-    nis: s.student.nis,
-    nama_siswa: s.student.nama,
-    kelas: s.student.kelas,
-    status_ujian: statusUjian,
-    skor,
-    benar,
-    salah,
-    jumlah_pelanggaran: s.violations.length,
-    log_pelanggaran: s.violations,
-    jawaban: s.answers,
-    waktu_mulai: s.startedAt,
-    waktu_selesai: new Date().toISOString()
-  };
-
-  db.results = db.results.filter(r => !(r.token_code === resultPayload.token_code && r.nis === resultPayload.nis));
-  db.results.unshift(resultPayload);
-  saveDb();
-
-  if (isApiReady()) {
-    try {
-      await smatechApi("submitExamResult", { result: resultPayload });
-    } catch (_) {
-      const q = JSON.parse(localStorage.getItem(SMATECH_CONFIG.OFFLINE_QUEUE_KEY) || "[]");
-      q.push(resultPayload);
-      localStorage.setItem(SMATECH_CONFIG.OFFLINE_QUEUE_KEY, JSON.stringify(q));
-    }
-  }
-
-  document.getElementById("cbtActiveStep")?.classList.add("hidden");
-  document.getElementById("cbtSummaryStep")?.classList.remove("hidden");
-  document.getElementById("summaryStatusPill").textContent = statusUjian === "TERKUNCI" ? "UJIAN TERKUNCI PELANGGARAN" : "UJIAN SELESAI";
-  document.getElementById("summarySubtitleText").textContent = note;
-
-  if (s.token.tampil_nilai) {
-    document.getElementById("summaryMetricsCard")?.classList.remove("hidden");
-    document.getElementById("summaryScoreNumber").textContent = String(skor);
-    document.getElementById("summaryBreakdownNumber").textContent = `${benar} / ${s.questions.length}`;
-    const tuntas = skor >= (s.token.kkm || 75);
-    const kBadge = document.getElementById("summaryKkmBadge");
-    if (kBadge) {
-      kBadge.textContent = tuntas ? "TUNTAS" : "REMEDIAL";
-      kBadge.className = tuntas
-        ? "inline-block mt-0.5 px-2.5 py-0.5 rounded-md text-xs font-extrabold bg-emerald-100 text-emerald-800"
-        : "inline-block mt-0.5 px-2.5 py-0.5 rounded-md text-xs font-extrabold bg-rose-100 text-rose-800";
-    }
-  } else {
-    document.getElementById("summaryMetricsCard")?.classList.add("hidden");
-  }
-  renderIcons();
-}
-
-function exitCbtToGate() {
-  runtime.cbtSession = null;
-  clearInterval(runtime.timerInterval);
-  document.getElementById("studentCbtView")?.classList.add("hidden");
-  document.getElementById("authGateView")?.classList.remove("hidden");
-  renderAuthGate();
-  renderIcons();
-}
-
-// =========================================================================
-// BACKUP, CSV & INITIALIZATION
-// =========================================================================
-function openBackupModal() { openModal("backupSystemModal"); }
-
-function downloadJsonBackup() {
-  const blob = new Blob([JSON.stringify(db, null, 2)], { type: "application/json" });
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = `SMATECH_Backup_${new Date().toISOString().slice(0, 10)}.json`;
-  a.click();
-}
-
-function restoreJsonBackup(event) {
-  const file = event.target.files?.[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = () => {
-    try {
-      const parsed = JSON.parse(String(reader.result));
-      if (parsed && Array.isArray(parsed.batches)) {
-        db = parsed;
-        saveDb();
-        refreshAllTeacherViews();
-        closeModal("backupSystemModal");
-        showToast("Database berhasil dipulihkan dari JSON.", "success");
-      }
-    } catch (_) {
-      showToast("File JSON tidak valid.", "error");
-    }
-  };
-  reader.readAsText(file);
-}
-
-function resetDemoDatabase() {
-  db = createInitialDb();
-  saveDb();
-  refreshAllTeacherViews();
-  closeModal("backupSystemModal");
-  showToast("Data demo SMATECH dikembalikan ke awal.", "info");
-}
-
-function downloadCsv(filename, rows) {
-  const csv = rows.map(r => r.map(v => `"${String(v ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = filename;
-  a.click();
-}
-
-document.addEventListener("DOMContentLoaded", () => {
-  try {
-    renderAuthGate();
-    document.getElementById("teacherManualLoginForm")?.addEventListener("submit", handleManualTeacherLogin);
-    document.getElementById("studentCbtLoginForm")?.addEventListener("submit", handleStudentCbtLogin);
-    document.getElementById("cbtNisInput")?.addEventListener("input", (e) => lookupStudentByNis(e.target.value));
-
-    document.addEventListener("visibilitychange", () => {
-      if (document.hidden && runtime.cbtSession?.isRunning) {
-        handleAntiCheatViolation("Perpindahan Tab / Browser Disembunyikan");
-      }
-    });
-    window.addEventListener("blur", () => {
-      if (runtime.cbtSession?.isRunning) {
-        handleAntiCheatViolation("Fokus Jendela Ujian Hilang (Window Blur)");
-      }
-    });
-    document.addEventListener("contextmenu", (e) => {
-      if (runtime.cbtSession?.isRunning) e.preventDefault();
-    });
-    document.addEventListener("keydown", (e) => {
-      if (!runtime.cbtSession?.isRunning) return;
-      const key = String(e.key || "").toUpperCase();
-      const blocked = key === "F12" || ((e.ctrlKey || e.metaKey) && ["C", "V", "X", "U", "P", "S"].includes(key));
-      if (blocked) {
-        e.preventDefault();
-        handleAntiCheatViolation(`Pintasan Keyboard Diblokir (${e.ctrlKey ? "Ctrl+" : ""}${key})`);
-      }
-    });
-
-    renderIcons();
-  } catch (err) {
-    console.error(err);
-    showToast("Kendala inisialisasi komponen antarmuka.", "error");
-  }
-});
+  <!-- Aplikasi logika -->
+  <script src="app.js"></script>
+</body>
+</html>
