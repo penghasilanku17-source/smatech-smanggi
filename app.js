@@ -454,6 +454,32 @@
     const user = ($('teacherEmailInput')?.value || '').trim().toLowerCase();
     const pass = $('teacherPassInput')?.value || '';
     if (!user || !pass) { showErr('Email/username dan kata sandi wajib diisi.'); return; }
+    // 1) Coba login via Google Sheets (sheet Users) terlebih dahulu.
+    if (isApiReady()) {
+      try {
+        const passwordHash = await sha256Hex(pass);
+        const res = await smatechApi('loginGuru', { email: user, passwordHash: passwordHash });
+        if (res && res.user) {
+          const u = res.user;
+          const initials = String(u.nama || 'GR').split(' ').filter(Boolean).slice(0, 2).map((w) => (w[0] || '')).join('').toUpperCase();
+          loginTeacher({
+            id: u.user_id || 'GURU-01',
+            initials: initials || 'GR',
+            name: u.nama || 'Guru',
+            email: u.email || user,
+            role: u.role || 'Guru Informatika'
+          });
+          return;
+        }
+        if (res && res.reason) { showErr(res.reason); return; }
+        showErr('Akun guru tidak ditemukan atau kata sandi salah.');
+        return;
+      } catch (err) {
+        // Jaringan/server error -> lanjut ke fallback lokal (akun demo).
+      }
+    }
+
+    // 2) Fallback lokal (akun demo hardcoded).
     const teacher = INFORMATICS_TEACHERS.find((t) => t.email.toLowerCase() === user || t.email.split('@')[0].toLowerCase() === user);
     if (!teacher) { showErr('Akun guru tidak ditemukan.'); return; }
     const okPass = (await sha256Hex(pass)) === (await sha256Hex(DEFAULT_PASSWORD));
