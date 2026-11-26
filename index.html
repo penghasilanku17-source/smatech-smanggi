@@ -400,10 +400,11 @@
 
         <div class="flex items-center gap-2.5 sm:gap-3 shrink-0">
           <!-- Local/Cloud Sync Indicator -->
-          <div id="cloudSyncPill" class="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-semibold">
+          <button type="button" id="cloudSyncPill" onclick="manualCloudSync()" title="Klik untuk sinkronisasi ulang dengan Google Sheets"
+            class="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 text-xs font-semibold transition cursor-pointer">
             <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
             <span>Terhubung Cloud Apps Script</span>
-          </div>
+          </button>
 
           <!-- Active Teacher Profile Pill -->
           <div class="flex items-center gap-2.5 px-3 py-1.5 rounded-xl bg-slate-100 border border-slate-200">
@@ -1454,1342 +1455,431 @@
       }
 
       async function sha256Hex(text) {
-        if (!window.crypto || !window.crypto.subtle) return String(text);
-        const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
-        return Array.from(new Uint8Array(digest))
-          .map((b) => b.toString(16).padStart(2, '0'))
-          .join('');
-      }
-
-      async function smatechApi(action, payload = {}) {
-        if (!isApiReady()) {
-          throw new Error('URL Web App Google Apps Script belum valid.');
-        }
-        const response = await fetch(SMATECH_CONFIG.API_URL, {
-          method: 'POST',
-          // text/plain menghindari preflight OPTIONS yang ditolak Google Apps Script
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify({ action, ...payload })
-        });
-        if (!response.ok) {
-          throw new Error('Koneksi gagal dengan status HTTP ' + response.status);
-        }
-        const result = await response.json();
-        if (!result.ok) {
-          throw new Error(result.message || 'Permintaan API gagal.');
-        }
-        return result;
-      }
-
-      function queueExamResultOffline(resultPayload) {
-        try {
-          const queue = JSON.parse(localStorage.getItem(SMATECH_CONFIG.OFFLINE_QUEUE_KEY) || '[]');
-          queue.push(resultPayload);
-          localStorage.setItem(SMATECH_CONFIG.OFFLINE_QUEUE_KEY, JSON.stringify(queue));
-        } catch (err) {
-          // Safe ignore
-        }
-      }
-
-      async function flushOfflineExamQueue() {
-        if (!isApiReady()) return;
-        let queue = [];
-        try {
-          queue = JSON.parse(localStorage.getItem(SMATECH_CONFIG.OFFLINE_QUEUE_KEY) || '[]');
-        } catch (err) {
-          queue = [];
-        }
-        if (!queue.length) return;
-
-        const remaining = [];
-        for (const item of queue) {
-          try {
-            await smatechApi('submitExamResult', { result: item });
-          } catch (_) {
-            remaining.push(item);
-          }
-        }
-        try {
-          localStorage.setItem(SMATECH_CONFIG.OFFLINE_QUEUE_KEY, JSON.stringify(remaining));
-        } catch (err) {
-          // Safe ignore
-        }
-      }
-
-      // 3 Guru Informatika SMAN 1 Gondanglegi
-      const INFORMATICS_TEACHERS = [
-        {
-          id: 'GURU-01',
-          initials: 'HA',
-          name: 'Pak Hardian Aji Kusuma, S.Kom.',
-          email: 'hardian@smanggi.sch.id',
-          password: 'smanggi123',
-          role: 'Koordinator Mapel Informatika'
-        },
-        {
-          id: 'GURU-02',
-          initials: 'RK',
-          name: 'Bu Rina Kusumawardani, S.Pd.',
-          email: 'rina@smanggi.sch.id',
-          password: 'smanggi123',
-          role: 'Guru Informatika • Kurikulum'
-        },
-        {
-          id: 'GURU-03',
-          initials: 'DP',
-          name: 'Pak Dimas Prasetyo, S.Kom.',
-          email: 'dimas@smanggi.sch.id',
-          password: 'smanggi123',
-          role: 'Guru Informatika • Admin CBT'
-        }
-      ];
-
-      // Generator 40 realistic Informatics questions per topic
-      function generate40TopicQuestions(topicTitle, stems) {
-        const letters = ['A', 'B', 'C', 'D', 'E'];
-        const levels = ['C1', 'C2', 'C3', 'C4'];
-        const out = [];
-        for (let i = 1; i <= 40; i++) {
-          const base = stems[(i - 1) % stems.length];
-          const key = letters[(i * 2 + 1) % 5];
-          const lvl = levels[(i - 1) % 4];
-          out.push({
-            number: i,
-            question: `[Butir #${i} • ${topicTitle}] ${base.q} (Studi kasus nomor ${i} pada evaluasi Informatika SMAN 1 Gondanglegi).`,
-            options: {
-              A: base.opts[0],
-              B: base.opts[1],
-              C: base.opts[2],
-              D: base.opts[3],
-              E: base.opts[4]
-            },
-            answer: key,
-            level: lvl
-          });
-        }
-        return out;
-      }
-
-      const SAMPLE_STEMS_BK = [
-        {
-          q: 'Dalam berpikir komputasional, proses memecah masalah besar menjadi sub-masalah kecil yang lebih mudah dikelola disebut sebagai',
-          opts: ['Dekomposisi (Decomposition)', 'Abstraksi (Abstraction)', 'Pengenalan Pola (Pattern Recognition)', 'Algoritma Sekuensial', 'Kompilasi Kode']
-        },
-        {
-          q: 'Struktur data antrean yang menerapkan prinsip First-In First-Out (FIFO) pada penjadwalan proses sistem operasi adalah',
-          opts: ['Stack (Tumpukan)', 'Queue (Antrean)', 'Binary Tree', 'Hash Table', 'Undirected Graph']
-        },
-        {
-          q: 'Notasi kompleksitas waktu yang menggambarkan pencarian biner (Binary Search) pada array terurut berukuran N adalah',
-          opts: ['O(1)', 'O(log N)', 'O(N)', 'O(N log N)', 'O(N^2)']
-        },
-        {
-          q: 'Langkah menyaring detail yang tidak relevan agar fokus hanya pada informasi penting dalam pemodelan sistem disebut',
-          opts: ['Iterasi', 'Rekursi', 'Abstraksi', 'Enkapsulasi', 'Debugging']
-        }
-      ];
-
-      const SAMPLE_STEMS_NET = [
-        {
-          q: 'Lapisan pada model referensi OSI yang bertanggung jawab melakukan pengalamatan logis (IP Address) dan penentuan rute paket adalah',
-          opts: ['Physical Layer', 'Data Link Layer', 'Network Layer', 'Transport Layer', 'Application Layer']
-        },
-        {
-          q: 'Protokol yang digunakan untuk menerjemahkan nama domain seperti sman1gondanglegi.sch.id menjadi alamat IP numerik adalah',
-          opts: ['DHCP', 'DNS', 'FTP', 'SMTP', 'SNMP']
-        },
-        {
-          q: 'Teknik pengamanan komunikasi web dengan mengenkripsi lalu lintas data menggunakan sertifikat TLS disebut',
-          opts: ['HTTP', 'Telnet', 'HTTPS', 'ARP', 'ICMP']
-        },
-        {
-          q: 'Subnet mask default untuk jaringan IPv4 kelas C dengan prefiks /24 adalah',
-          opts: ['255.0.0.0', '255.255.0.0', '255.255.255.0', '255.255.255.128', '255.255.255.252']
-        }
-      ];
-
-      const SAMPLE_STEMS_ALGO = [
-        {
-          q: 'Struktur kontrol perulangan yang memeriksa kondisi di awal sebelum mengeksekusi blok pernyataan adalah',
-          opts: ['while loop', 'do-while loop', 'switch-case', 'break statement', 'try-catch']
-        },
-        {
-          q: 'Tipe data yang paling tepat untuk menyimpan nilai kebenaran logika (True atau False) dalam bahasa pemrograman adalah',
-          opts: ['Integer', 'Float', 'Boolean', 'String', 'Character']
-        },
-        {
-          q: 'Fungsi yang memanggil dirinya sendiri secara bertahap hingga mencapai kondisi dasar (base case) disebut',
-          opts: ['Fungsi Rekursif', 'Fungsi Anonim', 'Konstruktor', 'Polimorfisme', 'Destruktor']
-        },
-        {
-          q: 'Operator logika yang menghasilkan nilai benar hanya jika kedua operan bernilai benar adalah',
-          opts: ['OR (||)', 'NOT (!)', 'XOR (^)', 'AND (&&)', 'MOD (%)']
-        }
-      ];
-
-      function buildInitialSeedState() {
-        const b1 = {
-          id: 'BATCH-2601',
-          title: 'Sumatif Berpikir Komputasional & Struktur Data (40 Soal)',
-          className: 'Kelas X',
-          topic: 'Berpikir Komputasional',
-          authorId: 'GURU-01',
-          authorName: 'Pak Hardian Aji Kusuma, S.Kom.',
-          createdAt: '2026-09-12T08:15:00',
-          questions: generate40TopicQuestions('Berpikir Komputasional', SAMPLE_STEMS_BK)
-        };
-
-        const b2 = {
-          id: 'BATCH-2602',
-          title: 'Evaluasi Jaringan Komputer & Keamanan Siber (40 Soal)',
-          className: 'Kelas XI',
-          topic: 'Jaringan Komputer & Internet',
-          authorId: 'GURU-02',
-          authorName: 'Bu Rina Kusumawardani, S.Pd.',
-          createdAt: '2026-10-18T10:00:00',
-          questions: generate40TopicQuestions('Jaringan Komputer', SAMPLE_STEMS_NET)
-        };
-
-        const b3 = {
-          id: 'BATCH-2603',
-          title: 'Penilaian Akhir Algoritma & Pemrograman Dasar (40 Soal)',
-          className: 'Kelas X',
-          topic: 'Algoritma & Pemrograman',
-          authorId: 'GURU-03',
-          authorName: 'Pak Dimas Prasetyo, S.Kom.',
-          createdAt: '2026-11-22T09:30:00',
-          questions: generate40TopicQuestions('Algoritma & Pemrograman', SAMPLE_STEMS_ALGO)
-        };
-
-        const students = [
-          { nis: '261001', name: 'Nabila Putri Maharani', className: 'X-1', active: true },
-          { nis: '261002', name: 'Raka Aditya Pratama', className: 'X-1', active: true },
-          { nis: '261003', name: 'Aulia Zahra Ramadhani', className: 'X-2', active: true },
-          { nis: '261004', name: 'Muhammad Rafi Akbar', className: 'X-2', active: true },
-          { nis: '261005', name: 'Citra Dewi Lestari', className: 'X-3', active: true },
-          { nis: '261006', name: 'Bima Satria Nugraha', className: 'X-3', active: true },
-          { nis: '261007', name: 'Dinda Ayu Puspitasari', className: 'X-4', active: true },
-          { nis: '261008', name: 'Fajar Nugroho Santoso', className: 'X-5', active: true },
-          { nis: '252001', name: 'Bagas Prakoso Wibowo', className: 'XI-1', active: true },
-          { nis: '252002', name: 'Intan Permata Sari', className: 'XI-1', active: true },
-          { nis: '252003', name: 'Reza Mahendra Putra', className: 'XI-2', active: true },
-          { nis: '252004', name: 'Siti Nurhaliza Khairunnisa', className: 'XI-3', active: true },
-          { nis: '252005', name: 'Galih Wisnu Wardhana', className: 'XI-4', active: true },
-          { nis: '252006', name: 'Putri Melati Anggraini', className: 'XI-6', active: true },
-          { nis: '252007', name: 'Alvin Kurniawan', className: 'XI-9', active: true },
-          { nis: '252008', name: 'Nadia Safitri', className: 'XI-12', active: false }
-        ];
-
-        const tokens = [
-          {
-            token: 'SMG26A',
-            title: 'Sumatif Akhir Informatika Kelas X',
-            batchId: 'BATCH-2603',
-            targetClass: 'KELAS_X',
-            durationMinutes: 60,
-            kkm: 75,
-            maxViolations: 3,
-            randomize: true,
-            enforceFullscreen: true,
-            showScore: true,
-            status: 'AKTIF',
-            createdBy: 'Pak Hardian Aji Kusuma, S.Kom.'
-          },
-          {
-            token: 'NET26B',
-            title: 'Ulangan Jaringan Komputer Kelas XI',
-            batchId: 'BATCH-2602',
-            targetClass: 'KELAS_XI',
-            durationMinutes: 45,
-            kkm: 75,
-            maxViolations: 3,
-            randomize: true,
-            enforceFullscreen: true,
-            showScore: true,
-            status: 'AKTIF',
-            createdBy: 'Bu Rina Kusumawardani, S.Pd.'
-          }
-        ];
-
-        // Realistic historical CBT records so Analytics & Proctoring are immediately rich
-        const sampleAnswersGood = {};
-        b3.questions.forEach((q, idx) => {
-          sampleAnswersGood[idx] = idx % 6 === 0 ? 'A' : q.answer;
-        });
-
-        const sampleAnswersMid = {};
-        b3.questions.forEach((q, idx) => {
-          sampleAnswersMid[idx] = idx % 3 === 0 ? 'B' : q.answer;
-        });
-
-        const sampleAnswersLocked = {};
-        for (let i = 0; i < 16; i++) {
-          sampleAnswersLocked[i] = b3.questions[i].answer;
-        }
-
-        const attempts = [
-          {
-            id: 'ATT-101',
-            token: 'SMG26A',
-            nis: '261002',
-            name: 'Raka Aditya Pratama',
-            className: 'X-1',
-            status: 'SELESAI',
-            answeredCount: 40,
-            totalQuestions: 40,
-            correctCount: 34,
-            score: 85,
-            violations: 0,
-            violationLogs: [],
-            answers: sampleAnswersGood,
-            finishedAt: '2026-11-26 08:42:10'
-          },
-          {
-            id: 'ATT-102',
-            token: 'SMG26A',
-            nis: '261003',
-            name: 'Aulia Zahra Ramadhani',
-            className: 'X-2',
-            status: 'SELESAI',
-            answeredCount: 40,
-            totalQuestions: 40,
-            correctCount: 28,
-            score: 70,
-            violations: 1,
-            violationLogs: [
-              { time: '08:19:44', reason: 'Perpindahan Tab / Window Blur' }
-            ],
-            answers: sampleAnswersMid,
-            finishedAt: '2026-11-26 08:50:05'
-          },
-          {
-            id: 'ATT-103',
-            token: 'SMG26A',
-            nis: '261006',
-            name: 'Bima Satria Nugraha',
-            className: 'X-3',
-            status: 'TERKUNCI',
-            answeredCount: 16,
-            totalQuestions: 40,
-            correctCount: 16,
-            score: 40,
-            violations: 3,
-            violationLogs: [
-              { time: '08:11:12', reason: 'Perpindahan Tab / Browser Hidden' },
-              { time: '08:14:29', reason: 'Keluar dari Mode Layar Penuh' },
-              { time: '08:16:03', reason: 'Pintasan Keyboard Diblokir (Ctrl+C)' }
-            ],
-            answers: sampleAnswersLocked,
-            finishedAt: '2026-11-26 08:16:03'
-          }
-        ];
-
-        return {
-          batches: [b1, b2, b3],
-          students,
-          tokens,
-          attempts
-        };
-      }
-
-      // Load or initialize persistent state
-      function loadPersistentDb() {
-        try {
-          const raw = localStorage.getItem(STORAGE_KEY);
-          if (raw) {
-            const parsed = JSON.parse(raw);
-            if (parsed && Array.isArray(parsed.batches) && Array.isArray(parsed.students)) {
-              return parsed;
-            }
-          }
-        } catch (err) {
-          // Fallback to clean seed
-        }
-        return buildInitialSeedState();
-      }
-
-      const db = loadPersistentDb();
-
-      function persistDb() {
-        try {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
-        } catch (err) {
-          // Ignore quota issues in private browsing
-        }
-        updateGlobalStatsBadges();
-      }
-
-      // Runtime session state
-      const runtime = {
-        activeTeacher: null,
-        activeModule: 'bank',
-        bankSort: 'newest',
-        inputSubTab: 'paste',
-        draftQuestions: [],
-        variantCache: { A: [], B: [], C: [] },
-        activeVariantKey: 'A',
-        inspectedBatchId: null,
-        inspectorShowKeys: false,
-        resultsSubTab: 'grades',
-        cbtSession: null,
-        cbtTimerHandle: null,
-        lastAntiCheatTime: 0
-      };
-
-      const $ = (id) => document.getElementById(id);
-
-      function showToast(msg, variant = 'info') {
-        const stack = $('toastStack');
-        if (!stack) return;
-        const styles = {
-          success: 'bg-emerald-950 text-emerald-100 border-emerald-500/60',
-          error: 'bg-rose-950 text-rose-100 border-rose-500/60',
-          warning: 'bg-amber-950 text-amber-100 border-amber-500/60',
-          info: 'bg-brand-950 text-slate-100 border-indigo-400/50'
-        }[variant] || 'bg-brand-950 text-slate-100 border-indigo-400/50';
-
-        const el = document.createElement('div');
-        el.className = `pointer-events-auto px-4 py-3 rounded-2xl border text-xs font-semibold shadow-xl transition-all duration-200 ${styles}`;
-        el.textContent = String(msg || '');
-        stack.appendChild(el);
-
-        setTimeout(() => {
-          if (el.parentNode) el.parentNode.removeChild(el);
-        }, 3400);
-      }
-
-      function renderIcons() {
-        try {
-          if (window.lucide && typeof window.lucide.createIcons === 'function') {
-            window.lucide.createIcons();
-          }
-        } catch (err) {
-          // Safe fallback
-        }
-      }
-
-      function escapeHtml(str) {
-        return String(str ?? '')
-          .replace(/&/g, '&amp;')
-          .replace(/</g, '&lt;')
-          .replace(/>/g, '&gt;')
-          .replace(/"/g, '&quot;');
-      }
-
-      function updateGlobalStatsBadges() {
-        const totalQ = db.batches.reduce((s, b) => s + (b.questions?.length || 0), 0);
-        if ($('gateStatQuestions')) $('gateStatQuestions').textContent = String(totalQ);
-        if ($('gateStatStudents')) $('gateStatStudents').textContent = String(db.students.length);
-        if ($('badgeBankCount')) $('badgeBankCount').textContent = String(db.batches.length);
-        if ($('badgeStudentCount')) $('badgeStudentCount').textContent = String(db.students.length);
-        const activeTokens = db.tokens.filter((t) => t.status === 'AKTIF').length;
-        if ($('badgeLiveActive')) $('badgeLiveActive').textContent = String(activeTokens);
-      }
-
-      // =====================================================================
-      // 1. DUAL-MODE AUTHENTICATION PORTAL
-      // =====================================================================
-      window.setAuthTab = function (tab) {
-        const isStudent = tab === 'student';
-        $('authTeacherPanel')?.classList.toggle('hidden', isStudent);
-        $('authStudentPanel')?.classList.toggle('hidden', !isStudent);
-
-        if ($('segTeacherBtn')) {
-          $('segTeacherBtn').className = !isStudent
-            ? 'py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold bg-brand-900 text-white shadow-xs transition flex items-center justify-center gap-2'
-            : 'py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold text-slate-600 hover:text-slate-900 transition flex items-center justify-center gap-2';
-        }
-        if ($('segStudentBtn')) {
-          $('segStudentBtn').className = isStudent
-            ? 'py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold bg-brand-900 text-white shadow-xs transition flex items-center justify-center gap-2'
-            : 'py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold text-slate-600 hover:text-slate-900 transition flex items-center justify-center gap-2';
-        }
-        renderIcons();
-      };
-
-      function renderQuickTeacherCards() {
-        const grid = $('quickTeacherGrid');
-        if (!grid) return;
-        grid.innerHTML = INFORMATICS_TEACHERS.map((t) => `
-          <button type="button" onclick="quickSignInTeacher('${t.id}')"
-            class="group p-3 rounded-2xl border border-slate-200 hover:border-indigo-500 hover:bg-indigo-50/50 text-left transition flex flex-col justify-between gap-2">
-            <div class="flex items-center justify-between">
-              <span class="w-8 h-8 rounded-xl bg-brand-900 text-cyan-300 font-bold text-xs flex items-center justify-center group-hover:scale-105 transition">
-                ${t.initials}
-              </span>
-              <i data-lucide="arrow-up-right" class="w-4 h-4 text-slate-400 group-hover:text-indigo-600"></i>
-            </div>
-            <div>
-              <strong class="block text-xs font-bold text-slate-900 leading-snug">${t.name}</strong>
-              <span class="block text-[10px] text-slate-500 mt-0.5">${t.role}</span>
-            </div>
-          </button>
-        `).join('');
-      }
-
-      window.quickSignInTeacher = function (teacherId) {
-        const teacher = INFORMATICS_TEACHERS.find((t) => t.id === teacherId);
-        if (teacher) enterTeacherWorkspace(teacher);
-      };
-
-      function enterTeacherWorkspace(teacher) {
-        runtime.activeTeacher = teacher;
-        $('teacherLoginErrorBox')?.classList.add('hidden');
-        $('authGateView')?.classList.add('hidden');
-        $('studentCbtView')?.classList.add('hidden');
-        $('teacherWorkspaceView')?.classList.remove('hidden');
-
-        if ($('topbarTeacherInitials')) $('topbarTeacherInitials').textContent = teacher.initials;
-        if ($('topbarTeacherName')) $('topbarTeacherName').textContent = teacher.name;
-        if ($('topbarTeacherRole')) $('topbarTeacherRole').textContent = teacher.role;
-
+// ... existing code ... -->
         populateAllDropdowns();
         window.switchTeacherModule('bank');
         syncDashboardFromCloud(true);
         showToast(`Selamat datang, ${teacher.name}`, 'success');
       }
 
-      async function syncDashboardFromCloud(silent = false) {
-        if (!isApiReady()) return;
-        const pill = $('cloudSyncPill');
-        try {
-          const res = await smatechApi('getDashboardData');
-          if (Array.isArray(res.batches) && res.batches.length > 0) {
-            const qByBatch = {};
-            (res.questions || []).forEach((q) => {
-              const bId = String(q.batch_id || '');
-              if (!qByBatch[bId]) qByBatch[bId] = [];
-              qByBatch[bId].push({
-                number: Number(q.nomor) || qByBatch[bId].length + 1,
-                question: String(q.pertanyaan || ''),
-                options: {
-                  A: String(q.opsi_a || ''),
-                  B: String(q.opsi_b || ''),
-                  C: String(q.opsi_c || ''),
-                  D: String(q.opsi_d || ''),
-                  E: String(q.opsi_e || '')
-                },
-                answer: String(q.kunci || 'A').toUpperCase(),
-                level: String(q.level_kognitif || 'C2')
-              });
-            });
-
-            db.batches = res.batches.map((b) => ({
-              id: String(b.batch_id),
-              title: String(b.judul || 'Paket Soal'),
-              className: String(b.kelas || 'Kelas X'),
-              topic: String(b.topik || 'Informatika'),
-              authorId: String(b.pembuat_id || 'GURU-01'),
-              authorName: String(b.pembuat_nama || 'Guru Informatika'),
-              createdAt: String(b.tanggal || new Date().toISOString()),
-              questions: (qByBatch[String(b.batch_id)] || []).sort((x, y) => x.number - y.number)
-            }));
-          }
-
-          if (Array.isArray(res.students) && res.students.length > 0) {
-            db.students = res.students.map((s) => ({
-              nis: String(s.nis || '').trim(),
-              name: String(s.nama || '').trim(),
-              className: String(s.kelas || '').trim(),
-              active: String(s.status || 'AKTIF').toUpperCase() === 'AKTIF'
-            }));
-          }
-
-          if (Array.isArray(res.tokens) && res.tokens.length > 0) {
-            db.tokens = res.tokens.map((t) => ({
-              token: String(t.token_code || '').trim().toUpperCase(),
-              title: String(t.judul_ujian || ''),
-              batchId: String(t.batch_id || ''),
-              targetClass: String(t.target_kelas || 'ALL'),
-              durationMinutes: Number(t.durasi_menit) || 60,
-              kkm: Number(t.kkm) || 75,
-              maxViolations: Number(t.max_pelanggaran) || 3,
-              randomize: String(t.acak_soal) === 'true' || t.acak_soal === true,
-              enforceFullscreen: String(t.wajib_fullscreen) === 'true' || t.wajib_fullscreen === true,
-              showScore: String(t.tampil_nilai) === 'true' || t.tampil_nilai === true,
-              status: String(t.status || 'AKTIF').toUpperCase(),
-              createdBy: String(t.dibuat_oleh || 'Guru Informatika')
-            }));
-          }
-
-          if (Array.isArray(res.results) && res.results.length > 0) {
-            db.attempts = res.results.map((r) => {
-              let parsedLogs = [];
-              let parsedAns = {};
-              try { parsedLogs = JSON.parse(r.log_pelanggaran_json || '[]'); } catch (_) {}
-              try { parsedAns = JSON.parse(r.jawaban_json || '{}'); } catch (_) {}
-              return {
-                id: String(r.result_id || `ATT-${Date.now()}`),
-                token: String(r.token_code || '').toUpperCase(),
-                nis: String(r.nis || ''),
-                name: String(r.nama_siswa || ''),
-                className: String(r.kelas || ''),
-                status: String(r.status_ujian || 'SELESAI').toUpperCase(),
-                answeredCount: Object.keys(parsedAns).length || 40,
-                totalQuestions: 40,
-                correctCount: Number(r.benar) || 0,
-                score: Number(r.skor) || 0,
-                violations: Number(r.jumlah_pelanggaran) || 0,
-                violationLogs: parsedLogs,
-                answers: parsedAns,
-                finishedAt: String(r.waktu_selesai || '')
-              };
-            });
-          }
-
-          persistDb();
-          populateAllDropdowns();
-          window.switchTeacherModule(runtime.activeModule);
-          if (pill) {
-            pill.className = 'hidden md:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-semibold';
-            pill.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-500"></span><span>Sinkron Google Sheets</span>`;
-          }
-          if (!silent) showToast('Data berhasil disinkronkan dari Google Sheets.', 'success');
-        } catch (err) {
-          if (pill) {
-            pill.className = 'hidden md:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs font-semibold';
-            pill.innerHTML = `<span class="w-2 h-2 rounded-full bg-amber-500"></span><span>Mode Cache Lokal</span>`;
-          }
-        }
-      }
-
-      // =====================================================================
-      // 3. TAB 1: BANK SOAL (40-BUTIR)
-      // =====================================================================
-      window.setBankSort = function (mode) {
-        runtime.bankSort = mode === 'oldest' ? 'oldest' : 'newest';
-        if ($('sortNewestBtn')) {
-          $('sortNewestBtn').className = runtime.bankSort === 'newest'
-            ? 'flex-1 py-1.5 px-2.5 rounded-lg text-xs font-bold bg-brand-900 text-white shadow-2xs transition flex items-center justify-center gap-1'
-            : 'flex-1 py-1.5 px-2.5 rounded-lg text-xs font-bold text-slate-600 hover:text-slate-900 transition flex items-center justify-center gap-1';
-        }
-        if ($('sortOldestBtn')) {
-          $('sortOldestBtn').className = runtime.bankSort === 'oldest'
-            ? 'flex-1 py-1.5 px-2.5 rounded-lg text-xs font-bold bg-brand-900 text-white shadow-2xs transition flex items-center justify-center gap-1'
-            : 'flex-1 py-1.5 px-2.5 rounded-lg text-xs font-bold text-slate-600 hover:text-slate-900 transition flex items-center justify-center gap-1';
-        }
-        renderBankBatches();
+      window.manualCloudSync = function () {
+        syncDashboardFromCloud(false);
       };
 
-      window.renderBankBatches = function () {
-        const grid = $('bankBatchesGrid');
-        if (!grid) return;
+      window.logoutToGate = function () {
+        runtime.activeTeacher = null;
+        $('teacherWorkspaceView')?.classList.add('hidden');
+        $('studentCbtView')?.classList.add('hidden');
+        $('authGateView')?.classList.remove('hidden');
+        window.setAuthTab('teacher');
+      };
 
-        const totalQ = db.batches.reduce((s, b) => s + (b.questions?.length || 0), 0);
-        if ($('kpiBankBatches')) $('kpiBankBatches').textContent = String(db.batches.length);
-        if ($('kpiBankQuestions')) $('kpiBankQuestions').textContent = String(totalQ);
-        if ($('kpiBankClassX')) $('kpiBankClassX').textContent = String(db.batches.filter((b) => b.className === 'Kelas X').length);
-        if ($('kpiBankClassXI')) $('kpiBankClassXI').textContent = String(db.batches.filter((b) => b.className === 'Kelas XI').length);
+      window.launchStudentPortalFromTeacher = function () {
+        $('teacherWorkspaceView')?.classList.add('hidden');
+        $('authGateView')?.classList.remove('hidden');
+        window.setAuthTab('student');
+        window.fillQuickStudentDemo();
+      };
 
-        const search = ($('bankSearchInput')?.value || '').trim().toLowerCase();
-        const teacherFilter = $('bankTeacherFilter')?.value || 'ALL';
-        const classFilter = $('bankClassFilter')?.value || 'ALL';
+      window.toggleMobileSidebar = function (open) {
+        const sidebar = $('teacherSidebar');
+        const backdrop = $('mobileSidebarBackdrop');
+        if (!sidebar) return;
+        if (open) {
+          sidebar.classList.remove('-translate-x-full');
+          backdrop?.classList.remove('hidden');
+        } else {
+          sidebar.classList.add('-translate-x-full');
+          backdrop?.classList.add('hidden');
+        }
+      };
 
-        const filtered = db.batches.filter((b) => {
-          const okT = teacherFilter === 'ALL' || b.authorId === teacherFilter;
-          const okC = classFilter === 'ALL' || b.className === classFilter;
-          const okS = !search ||
-            b.title.toLowerCase().includes(search) ||
-            b.topic.toLowerCase().includes(search) ||
-            b.id.toLowerCase().includes(search);
-          return okT && okC && okS;
+      const MODULE_META = {
+        bank: {
+          title: 'Bank Soal (40-Butir)',
+          subtitle: 'Kolaborasi Repositori Soal Informatika SMAN 1 Gondanglegi'
+        },
+        input: {
+          title: 'Input Batch 40 Soal',
+          subtitle: 'Smart Paste Parser & Grid Editor Terstruktur 40 Butir'
+        },
+        compose: {
+          title: 'Pengolahan & Rakit Ujian',
+          subtitle: 'Generator Paket Acak A/B/C & Mix-Match Lintas Batch'
+        },
+        students: {
+          title: 'Data Siswa (X & XI)',
+          subtitle: 'Direktori Peserta Didik & Validasi NIS Ujian CBT'
+        },
+        live: {
+          title: 'Ujian Live & Token',
+          subtitle: 'Manajemen Token Sesi 6-Karakter & Live Proctoring'
+        },
+        results: {
+          title: 'Hasil, Nilai & Analisis',
+          subtitle: 'Rekap Skor, Ketuntasan KKM & Analisis Butir Soal'
+        }
+      };
+
+      window.switchTeacherModule = function (moduleKey) {
+        runtime.activeModule = MODULE_META[moduleKey] ? moduleKey : 'bank';
+        document.querySelectorAll('.workspace-module').forEach((sec) => sec.classList.add('hidden'));
+        $(`module-${runtime.activeModule}`)?.classList.remove('hidden');
+
+        document.querySelectorAll('.sidebar-nav-btn').forEach((btn) => {
+          const isActive = btn.getAttribute('data-nav') === runtime.activeModule;
+          btn.className = isActive
+            ? 'sidebar-nav-btn w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-bold bg-indigo-600 text-white shadow-xs transition'
+            : 'sidebar-nav-btn w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold text-slate-300 hover:bg-white/10 hover:text-white transition';
         });
 
-        filtered.sort((a, b) => {
-          const tA = new Date(a.createdAt).getTime();
-          const tB = new Date(b.createdAt).getTime();
-          return runtime.bankSort === 'newest' ? tB - tA : tA - tB;
-        });
+        const meta = MODULE_META[runtime.activeModule];
+        if ($('topbarModuleTitle')) $('topbarModuleTitle').textContent = meta.title;
+        if ($('topbarModuleSubtitle')) $('topbarModuleSubtitle').textContent = meta.subtitle;
 
-        if (filtered.length === 0) {
-          grid.innerHTML = `<div class="col-span-full bg-white p-10 rounded-2xl border border-slate-200 text-center text-sm text-slate-500">Tidak ada batch soal yang cocok dengan filter pencarian.</div>`;
-          return;
-        }
+        window.toggleMobileSidebar(false);
 
-        grid.innerHTML = filtered.map((b) => {
-          const dateFmt = new Date(b.createdAt).toLocaleDateString('id-ID', {
-            day: '2-digit',
-            month: 'short',
-            year: 'numeric'
-          });
-          const initials = (b.authorName || 'GR').replace(/^(Pak|Bu)\s+/i, '').split(' ').slice(0, 2).map((w) => w[0]).join('').toUpperCase();
-
-          return `
-            <article class="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs hover:border-indigo-400 transition flex flex-col justify-between gap-4">
-              <div class="space-y-3">
-                <div class="flex items-center justify-between gap-2">
-                  <span class="font-mono text-[11px] font-bold px-2.5 py-0.5 rounded-md bg-slate-100 text-slate-700">${escapeHtml(b.id)}</span>
-                  <span class="text-[11px] font-bold px-2.5 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200">${escapeHtml(b.className)}</span>
-                </div>
-
-                <div>
-                  <h3 class="text-sm font-extrabold text-slate-900 leading-snug">${escapeHtml(b.title)}</h3>
-                  <p class="text-xs text-slate-500 mt-1">Topik: <strong class="text-slate-700">${escapeHtml(b.topic)}</strong></p>
-                </div>
-
-                <div class="flex items-center justify-between pt-2 border-t border-slate-100 text-xs">
-                  <div class="flex items-center gap-2 min-w-0">
-                    <span class="w-6 h-6 rounded-lg bg-brand-900 text-cyan-300 font-bold text-[10px] flex items-center justify-center shrink-0">${initials}</span>
-                    <span class="text-slate-600 truncate">${escapeHtml(b.authorName)}</span>
-                  </div>
-                  <span class="text-[11px] text-slate-400 shrink-0">${dateFmt}</span>
-                </div>
-              </div>
-
-              <div class="flex items-center justify-between gap-2 pt-3 border-t border-slate-100">
-                <span class="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-extrabold tabular-nums">
-                  ${b.questions.length} Soal
-                </span>
-                <button type="button" onclick="openBatchInspector('${b.id}')"
-                  class="px-3.5 py-2 rounded-xl bg-brand-900 hover:bg-brand-800 text-white text-xs font-bold flex items-center gap-1.5 transition">
-                  <i data-lucide="eye" class="w-3.5 h-3.5 text-cyan-300"></i>
-                  <span>Inspeksi Batch</span>
-                </button>
-              </div>
-            </article>
-          `;
-        }).join('');
-        renderIcons();
-      };
-
-      window.openBatchInspector = function (batchId) {
-        const batch = db.batches.find((b) => b.id === batchId);
-        if (!batch) return;
-        runtime.inspectedBatchId = batchId;
-        runtime.inspectorShowKeys = false;
-
-        if ($('inspectorTitle')) $('inspectorTitle').textContent = batch.title;
-        if ($('inspectorMeta')) $('inspectorMeta').textContent = `${batch.id} • ${batch.className} • ${batch.topic} • Oleh ${batch.authorName}`;
-        if ($('inspectorToggleKeysBtn')) $('inspectorToggleKeysBtn').textContent = 'Tampilkan Kunci & Level';
-
-        renderInspectorList(batch);
-        $('batchInspectorModal')?.classList.remove('hidden');
-        renderIcons();
-      };
-
-      window.toggleInspectorKeys = function () {
-        const batch = db.batches.find((b) => b.id === runtime.inspectedBatchId);
-        if (!batch) return;
-        runtime.inspectorShowKeys = !runtime.inspectorShowKeys;
-        if ($('inspectorToggleKeysBtn')) {
-          $('inspectorToggleKeysBtn').textContent = runtime.inspectorShowKeys ? 'Sembunyikan Kunci' : 'Tampilkan Kunci & Level';
-        }
-        renderInspectorList(batch);
-      };
-
-      function renderInspectorList(batch) {
-        const box = $('inspectorQuestionsList');
-        if (!box) return;
-        box.innerHTML = batch.questions.map((q, idx) => `
-          <div class="p-4 rounded-2xl bg-white border border-slate-200 space-y-2">
-            <div class="flex items-center justify-between gap-2">
-              <span class="font-mono font-extrabold text-brand-900 tabular-nums">Soal #${idx + 1}</span>
-              ${runtime.inspectorShowKeys
-                ? `<div class="flex items-center gap-1.5">
-                    <span class="px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 font-mono font-bold">${q.level || 'C2'}</span>
-                    <span class="px-2.5 py-0.5 rounded bg-emerald-100 text-emerald-800 font-extrabold">Kunci: ${q.answer}</span>
-                  </div>`
-                : ''}
-            </div>
-            <p class="text-slate-900 font-semibold leading-relaxed">${escapeHtml(q.question)}</p>
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-slate-600 pt-1">
-              ${['A', 'B', 'C', 'D', 'E'].map((k) => {
-                const isKey = runtime.inspectorShowKeys && q.answer === k;
-                return `<div class="px-2.5 py-1 rounded-lg ${isKey ? 'bg-emerald-50 text-emerald-900 font-bold border border-emerald-200' : 'bg-slate-50'}">
-                  <span class="font-mono font-bold mr-1">${k}.</span> ${escapeHtml(q.options?.[k] || '')}
-                </div>`;
-              }).join('')}
-            </div>
-          </div>
-        `).join('');
-      }
-
-      window.quickCreateTokenFromInspector = function () {
-        const bId = runtime.inspectedBatchId;
-        closeModal('batchInspectorModal');
-        window.switchTeacherModule('live');
-        if ($('liveBatchSelect') && bId) $('liveBatchSelect').value = bId;
-        const b = db.batches.find((item) => item.id === bId);
-        if (b && $('liveExamTitleInput')) $('liveExamTitleInput').value = b.title;
-        showToast('Batch dimuat ke formulir penerbitan token.', 'info');
-      };
-
-      // =====================================================================
-      // 4. TAB 2: INPUT BATCH 40 SOAL (SMART PASTE + GRID EDITOR)
-      // =====================================================================
-      function initBlankDraft40() {
-        const letters = ['A', 'B', 'C', 'D', 'E'];
-        const levels = ['C1', 'C2', 'C3', 'C4'];
-        runtime.draftQuestions = Array.from({ length: 40 }, (_, i) => ({
-          number: i + 1,
-          question: '',
-          options: { A: '', B: '', C: '', D: '', E: '' },
-          answer: letters[i % 5],
-          level: levels[i % 4]
-        }));
-      }
-
-      window.switchInputSubTab = function (tab) {
-        runtime.inputSubTab = tab === 'grid' ? 'grid' : 'paste';
-        $('inputPanePaste')?.classList.toggle('hidden', runtime.inputSubTab !== 'paste');
-        $('inputPaneGrid')?.classList.toggle('hidden', runtime.inputSubTab !== 'grid');
-
-        if ($('inputSubTabPasteBtn')) {
-          $('inputSubTabPasteBtn').className = runtime.inputSubTab === 'paste'
-            ? 'px-3.5 py-1.5 rounded-xl text-xs font-bold bg-brand-900 text-white transition'
-            : 'px-3.5 py-1.5 rounded-xl text-xs font-bold bg-white text-slate-700 border border-slate-300 hover:bg-slate-100 transition';
-        }
-        if ($('inputSubTabGridBtn')) {
-          $('inputSubTabGridBtn').className = runtime.inputSubTab === 'grid'
-            ? 'px-3.5 py-1.5 rounded-xl text-xs font-bold bg-brand-900 text-white transition'
-            : 'px-3.5 py-1.5 rounded-xl text-xs font-bold bg-white text-slate-700 border border-slate-300 hover:bg-slate-100 transition';
-        }
-        if (runtime.inputSubTab === 'grid') renderGridEditorRows();
-      };
-
-      window.loadSample40Template = function () {
-        const sample40 = generate40TopicQuestions('Analisis Data & Keamanan Siber', SAMPLE_STEMS_NET);
-        runtime.draftQuestions = sample40;
-        if ($('inputBatchTitle') && !$('inputBatchTitle').value.trim()) {
-          $('inputBatchTitle').value = 'Asesmen Analisis Data & Keamanan Siber (40 Soal)';
-        }
-        if ($('smartPasteTextarea')) {
-          $('smartPasteTextarea').value = sample40.map((q) =>
-            `${q.number}. ${q.question} | ${q.options.A} | ${q.options.B} | ${q.options.C} | ${q.options.D} | ${q.options.E} | ${q.answer} | ${q.level}`
-          ).join('\n');
-        }
-        renderGridEditorRows();
-        evaluateDraftValidity();
-        if ($('pasteDiagnosticsBox')) {
-          $('pasteDiagnosticsBox').innerHTML = `<span class="text-emerald-700 font-bold">Validasi Sukses: Tepat 40 butir soal terstruktur siap disimpan ke Bank Soal.</span>`;
-        }
-        showToast('Template 40 soal Informatika berhasil dimuat!', 'success');
-      };
-
-      window.resetInputDraft = function () {
-        initBlankDraft40();
-        if ($('inputBatchTitle')) $('inputBatchTitle').value = '';
-        if ($('smartPasteTextarea')) $('smartPasteTextarea').value = '';
-        if ($('pasteDiagnosticsBox')) $('pasteDiagnosticsBox').textContent = 'Form dikosongkan. Belum ada teks soal yang diproses.';
-        renderGridEditorRows();
-        evaluateDraftValidity();
-      };
-
-      window.parseSmartPasteText = function (silent = false) {
-        const raw = ($('smartPasteTextarea')?.value || '').trim();
-        const diagBox = $('pasteDiagnosticsBox');
-        if (!raw) {
-          initBlankDraft40();
-          evaluateDraftValidity();
-          if (diagBox) diagBox.textContent = 'Area teks kosong.';
-          return;
-        }
-
-        const lines = raw.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-        const validLetters = ['A', 'B', 'C', 'D', 'E'];
-        const errors = [];
-        const validItems = [];
-
-        lines.forEach((line, idx) => {
-          const parts = line.split('|').map((p) => p.trim());
-          if (parts.length < 7) {
-            errors.push(`Baris ${idx + 1}: Kolom kurang dari 7 pemisah "|"`);
-            return;
-          }
-          const qText = parts[0].replace(/^\d+[\).\s-]+/, '').trim();
-          const ans = (parts[6] || '').toUpperCase().replace(/[^A-E]/g, '');
-          const lvlRaw = (parts[7] || 'C2').toUpperCase();
-          const lvl = ['C1', 'C2', 'C3', 'C4'].includes(lvlRaw) ? lvlRaw : 'C2';
-
-          if (!qText || !parts[1] || !parts[2] || !parts[3] || !parts[4] || !parts[5]) {
-            errors.push(`Baris ${idx + 1}: Pertanyaan atau salah satu opsi A–E kosong`);
-            return;
-          }
-          if (!validLetters.includes(ans)) {
-            errors.push(`Baris ${idx + 1}: Kunci jawaban "${parts[6]}" tidak valid (harus A–E)`);
-            return;
-          }
-          validItems.push({
-            number: idx + 1,
-            question: qText,
-            options: { A: parts[1], B: parts[2], C: parts[3], D: parts[4], E: parts[5] },
-            answer: ans,
-            level: lvl
-          });
-        });
-
-        initBlankDraft40();
-        validItems.slice(0, 40).forEach((item, i) => {
-          runtime.draftQuestions[i] = { ...item, number: i + 1 };
-        });
-
-        renderGridEditorRows();
-        evaluateDraftValidity();
-
-        if (diagBox) {
-          if (errors.length === 0 && validItems.length === 40) {
-            diagBox.innerHTML = `<span class="text-emerald-700 font-bold">Validasi Sempurna: 40 / 40 soal valid dan lengkap.</span>`;
-          } else {
-            const errPreview = errors.slice(0, 3).join(' • ');
-            diagBox.innerHTML = `<span class="text-amber-800 font-bold">Terbaca ${validItems.length} soal valid dari ${lines.length} baris (Syarat simpan: tepat 40 soal).</span>` +
-              (errPreview ? `<span class="block text-rose-700 mt-1">${escapeHtml(errPreview)}</span>` : '');
-          }
-        }
-        if (!silent) showToast(`Validasi selesai: ${validItems.length}/40 soal valid.`, validItems.length === 40 ? 'success' : 'warning');
-      };
-
-      function renderGridEditorRows() {
-        const tbody = $('gridEditorTbody');
-        if (!tbody) return;
-        tbody.innerHTML = runtime.draftQuestions.map((q, idx) => `
-          <tr class="hover:bg-slate-50">
-            <td class="p-2 text-center font-mono font-bold text-slate-600 tabular-nums">${idx + 1}</td>
-            <td class="p-1.5"><input type="text" value="${escapeHtml(q.question)}" oninput="editGridField(${idx}, 'question', this.value)" class="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg" placeholder="Pertanyaan #${idx + 1}" /></td>
-            <td class="p-1.5"><input type="text" value="${escapeHtml(q.options.A)}" oninput="editGridField(${idx}, 'A', this.value)" class="w-full px-2 py-1.5 border border-slate-200 rounded-lg" placeholder="Opsi A" /></td>
-            <td class="p-1.5"><input type="text" value="${escapeHtml(q.options.B)}" oninput="editGridField(${idx}, 'B', this.value)" class="w-full px-2 py-1.5 border border-slate-200 rounded-lg" placeholder="Opsi B" /></td>
-            <td class="p-1.5"><input type="text" value="${escapeHtml(q.options.C)}" oninput="editGridField(${idx}, 'C', this.value)" class="w-full px-2 py-1.5 border border-slate-200 rounded-lg" placeholder="Opsi C" /></td>
-            <td class="p-1.5"><input type="text" value="${escapeHtml(q.options.D)}" oninput="editGridField(${idx}, 'D', this.value)" class="w-full px-2 py-1.5 border border-slate-200 rounded-lg" placeholder="Opsi D" /></td>
-            <td class="p-1.5"><input type="text" value="${escapeHtml(q.options.E)}" oninput="editGridField(${idx}, 'E', this.value)" class="w-full px-2 py-1.5 border border-slate-200 rounded-lg" placeholder="Opsi E" /></td>
-            <td class="p-1.5 text-center">
-              <select onchange="editGridField(${idx}, 'level', this.value)" class="px-2 py-1.5 border border-slate-200 rounded-lg bg-white font-mono font-bold">
-                ${['C1', 'C2', 'C3', 'C4'].map((l) => `<option value="${l}" ${q.level === l ? 'selected' : ''}>${l}</option>`).join('')}
-              </select>
-            </td>
-            <td class="p-1.5 text-center">
-              <div class="inline-flex rounded-lg border border-slate-200 overflow-hidden">
-                ${['A', 'B', 'C', 'D', 'E'].map((k) => `
-                  <button type="button" onclick="editGridField(${idx}, 'answer', '${k}')"
-                    class="px-1.5 py-1 text-[11px] font-mono font-bold ${q.answer === k ? 'bg-brand-900 text-cyan-300' : 'bg-white text-slate-600 hover:bg-slate-100'}">
-                    ${k}
-                  </button>
-                `).join('')}
-              </div>
-            </td>
-          </tr>
-        `).join('');
-      }
-
-      window.editGridField = function (idx, field, val) {
-        const item = runtime.draftQuestions[idx];
-        if (!item) return;
-        if (field === 'question') item.question = val;
-        else if (field === 'level') item.level = val;
-        else if (field === 'answer') {
-          item.answer = val;
+        if (runtime.activeModule === 'bank') renderBankBatches();
+        if (runtime.activeModule === 'input') {
           renderGridEditorRows();
-        } else if (['A', 'B', 'C', 'D', 'E'].includes(field)) {
-          item.options[field] = val;
+          evaluateDraftValidity();
         }
-        evaluateDraftValidity();
+        if (runtime.activeModule === 'compose') {
+          generateShuffledVariants();
+          refreshMixStatus();
+        }
+        if (runtime.activeModule === 'students') renderStudentDirectory();
+        if (runtime.activeModule === 'live') {
+          renderActiveTokensGrid();
+          renderLiveProctoringTable();
+        }
+        if (runtime.activeModule === 'results') renderResultsModule();
+        renderIcons();
       };
 
-      function isQuestionItemValid(q) {
-        return Boolean(
-          q &&
-          String(q.question || '').trim() &&
-          String(q.options?.A || '').trim() &&
-          String(q.options?.B || '').trim() &&
-          String(q.options?.C || '').trim() &&
-          String(q.options?.D || '').trim() &&
-          String(q.options?.E || '').trim() &&
-          ['A', 'B', 'C', 'D', 'E'].includes(String(q.answer || '').toUpperCase())
-        );
+      function populateAllDropdowns() {
+        const teacherSel = $('bankTeacherFilter');
+        if (teacherSel) {
+          const prev = teacherSel.value || 'ALL';
+          teacherSel.innerHTML = `<option value="ALL">Semua Guru (3 Guru)</option>` +
+            INFORMATICS_TEACHERS.map((t) => `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join('');
+          teacherSel.value = prev;
+        }
+
+        const batchOptionsHtml = db.batches.map((b) =>
+          `<option value="${escapeHtml(b.id)}">[${escapeHtml(b.id)}] ${escapeHtml(b.title)}</option>`
+        ).join('');
+
+        ['variantSourceBatchSelect', 'mixSource1Select', 'mixSource2Select', 'liveBatchSelect'].forEach((id, idx) => {
+          const el = $(id);
+          if (!el) return;
+          const prev = el.value;
+          el.innerHTML = batchOptionsHtml;
+          if (prev && db.batches.some((b) => b.id === prev)) {
+            el.value = prev;
+          } else if (idx === 2 && db.batches.length > 1) {
+            el.value = db.batches[1].id;
+          }
+        });
+
+        const tokenOptsAll = `<option value="ALL">Semua Sesi Token</option>` +
+          db.tokens.map((t) => `<option value="${escapeHtml(t.token)}">${escapeHtml(t.token)} — ${escapeHtml(t.title)}</option>`).join('');
+        if ($('proctorTokenFilter')) $('proctorTokenFilter').innerHTML = tokenOptsAll;
+
+        const resFilter = $('resultsTokenFilter');
+        if (resFilter) {
+          const prev = resFilter.value;
+          resFilter.innerHTML = db.tokens.map((t) =>
+            `<option value="${escapeHtml(t.token)}">${escapeHtml(t.token)} — ${escapeHtml(t.title)}</option>`
+          ).join('');
+          if (prev && db.tokens.some((t) => t.token === prev)) resFilter.value = prev;
+        }
       }
 
-      window.evaluateDraftValidity = function () {
-        const validCount = runtime.draftQuestions.filter(isQuestionItemValid).length;
-        const pct = Math.round((validCount / 40) * 100);
-        const titleOk = Boolean(($('inputBatchTitle')?.value || '').trim());
+      window.populateNewTokenCode = function () {
+        const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+        let code = 'SMG';
+        for (let i = 0; i < 3; i++) {
+          code += chars[Math.floor(Math.random() * chars.length)];
+        }
+        if ($('liveTokenInput')) $('liveTokenInput').value = code;
+      };
 
-        if ($('draftMeterBar')) {
-          $('draftMeterBar').style.width = `${pct}%`;
-          $('draftMeterBar').className = validCount === 40 ? 'h-full bg-emerald-500 transition-all duration-300' : 'h-full bg-amber-500 transition-all duration-300';
+      window.fillQuickStudentDemo = function () {
+        const activeStudent = db.students.find((s) => s.active) || db.students[0];
+        const activeTok = db.tokens.find((t) => t.status === 'AKTIF') || db.tokens[0];
+        if ($('cbtNisInput') && activeStudent) {
+          $('cbtNisInput').value = activeStudent.nis;
+          updateStudentLookupPreview(activeStudent.nis);
         }
-        if ($('draftMeterBadge')) {
-          $('draftMeterBadge').textContent = `${validCount} / 40 Soal Valid`;
-          $('draftMeterBadge').className = validCount === 40
-            ? 'px-3 py-1 rounded-full text-xs font-mono font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 tabular-nums'
-            : 'px-3 py-1 rounded-full text-xs font-mono font-bold bg-amber-50 text-amber-800 border border-amber-200 tabular-nums';
-        }
-        if ($('saveBatchBtn')) {
-          $('saveBatchBtn').disabled = !(validCount === 40 && titleOk);
+        if ($('cbtTokenCodeInput') && activeTok) {
+          $('cbtTokenCodeInput').value = activeTok.token;
         }
       };
 
-      window.commitNewBatch40 = function () {
-        const title = ($('inputBatchTitle')?.value || '').trim();
-        const validQs = runtime.draftQuestions.filter(isQuestionItemValid);
-        if (!title || validQs.length !== 40) {
-          showToast('Pastikan judul terisi dan tepat 40 soal valid.', 'error');
+      function updateStudentLookupPreview(nisRaw) {
+        const box = $('studentLookupPreview');
+        if (!box) return;
+        const nis = String(nisRaw || '').trim();
+        if (!nis) {
+          box.className = 'p-3.5 rounded-2xl border border-slate-200 bg-slate-50 transition';
+          box.innerHTML = `<div class="flex items-center gap-3 text-xs text-slate-500">
+            <div class="w-9 h-9 rounded-xl bg-slate-200/80 flex items-center justify-center text-slate-500 shrink-0"><i data-lucide="user-search" class="w-4 h-4"></i></div>
+            <div><span class="font-semibold text-slate-700 block">Pencarian Otomatis Database Siswa</span><span>Ketik NIS untuk memverifikasi identitas & kelas peserta secara instan.</span></div>
+          </div>`;
+          renderIcons();
           return;
         }
-        const author = runtime.activeTeacher || INFORMATICS_TEACHERS[0];
-        const newBatch = {
-          id: `BATCH-${String(Date.now()).slice(-4)}`,
-          title,
-          className: $('inputBatchClass')?.value || 'Kelas X',
-          topic: $('inputBatchTopic')?.value || 'Berpikir Komputasional',
-          authorId: author.id,
-          authorName: author.name,
-          createdAt: new Date().toISOString(),
-          questions: validQs.slice(0, 40).map((q, i) => ({
-            number: i + 1,
-            question: q.question.trim(),
-            options: {
-              A: q.options.A.trim(),
-              B: q.options.B.trim(),
-              C: q.options.C.trim(),
-              D: q.options.D.trim(),
-              E: q.options.E.trim()
-            },
-            answer: q.answer.toUpperCase(),
-            level: q.level || 'C2'
-          }))
-        };
-
-        db.batches.unshift(newBatch);
-        persistDb();
-        resetInputDraft();
-        window.switchTeacherModule('bank');
-        showToast(`Batch "${title}" (40 soal) tersimpan ke Bank Soal!`, 'success');
-
-        // Sinkron ke Google Sheets Apps Script di latar belakang
-        smatechApi('saveBatch40', {
-          batch: {
-            batch_id: newBatch.id,
-            judul: newBatch.title,
-            kelas: newBatch.className,
-            topik: newBatch.topic,
-            pembuat_id: newBatch.authorId,
-            pembuat_nama: newBatch.authorName,
-            tanggal: newBatch.createdAt
-          },
-          questions: newBatch.questions.map((q) => ({
-            pertanyaan: q.question,
-            opsi_a: q.options.A,
-            opsi_b: q.options.B,
-            opsi_c: q.options.C,
-            opsi_d: q.options.D,
-            opsi_e: q.options.E,
-            kunci: q.answer,
-            level_kognitif: q.level
-          }))
-        }).catch(() => {
-          showToast('Tersimpan di browser (sinkron cloud tertunda).', 'warning');
-        });
-      };
-
-      // =====================================================================
-      // 5. TAB 3: PENGOLAHAN & RAKIT UJIAN
-      // =====================================================================
-      function shuffleList(arr) {
-        const copy = arr.slice();
-        for (let i = copy.length - 1; i > 0; i--) {
-          const j = Math.floor(Math.random() * (i + 1));
-          [copy[i], copy[j]] = [copy[j], copy[i]];
-        }
-        return copy;
-      }
-
-      function createShuffledVariant(questions, pinFirstFive, doShuffle) {
-        const letters = ['A', 'B', 'C', 'D', 'E'];
-        let ordered = questions.slice();
-        if (doShuffle) {
-          if (pinFirstFive && ordered.length > 5) {
-            const fixed = ordered.slice(0, 5);
-            const rest = shuffleList(ordered.slice(5));
-            ordered = fixed.concat(rest);
-          } else {
-            ordered = shuffleList(ordered);
-          }
-        }
-
-        return ordered.map((q, idx) => {
-          const origKey = (q.answer || 'A').toUpperCase();
-          if (!doShuffle) {
-            return { number: idx + 1, question: q.question, options: { ...q.options }, answer: origKey, level: q.level || 'C2' };
-          }
-          const entries = letters.map((k) => ({ orig: k, text: q.options[k] }));
-          const mixed = shuffleList(entries);
-          const newOpts = {};
-          let newKey = origKey;
-          mixed.forEach((m, pos) => {
-            const l = letters[pos];
-            newOpts[l] = m.text;
-            if (m.orig === origKey) newKey = l;
-          });
-          return { number: idx + 1, question: q.question, options: newOpts, answer: newKey, level: q.level || 'C2' };
-        });
-      }
-
-      window.generateShuffledVariants = function () {
-        const bId = $('variantSourceBatchSelect')?.value || db.batches[0]?.id;
-        const batch = db.batches.find((b) => b.id === bId) || db.batches[0];
-        if (!batch) return;
-        const pin5 = Boolean($('pinFirstFiveCheckbox')?.checked);
-
-        runtime.variantCache = {
-          A: createShuffledVariant(batch.questions, pin5, false),
-          B: createShuffledVariant(batch.questions, pin5, true),
-          C: createShuffledVariant(batch.questions, pin5, true)
-        };
-        renderVariantPreviewList();
-      };
-
-      window.selectActiveVariant = function (key) {
-        runtime.activeVariantKey = ['A', 'B', 'C'].includes(key) ? key : 'A';
-        ['A', 'B', 'C'].forEach((k) => {
-          const btn = $(`variantTab${k}`);
-          if (!btn) return;
-          btn.className = k === runtime.activeVariantKey
-            ? 'py-2 rounded-xl text-xs font-extrabold bg-brand-900 text-white'
-            : 'py-2 rounded-xl text-xs font-extrabold bg-slate-100 text-slate-700';
-        });
-        renderVariantPreviewList();
-      };
-
-      function renderVariantPreviewList() {
-        const box = $('variantPreviewContainer');
-        if (!box) return;
-        const items = runtime.variantCache[runtime.activeVariantKey] || [];
-        box.innerHTML = items.slice(0, 10).map((q) => `
-          <div class="p-2.5 rounded-xl bg-white border border-slate-200 flex items-start justify-between gap-2">
-            <p class="text-slate-800 line-clamp-2"><strong class="font-mono text-brand-900">${q.number}.</strong> ${escapeHtml(q.question)}</p>
-            <span class="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-mono font-bold shrink-0">Kunci: ${q.answer}</span>
-          </div>
-        `).join('') + `<p class="text-[11px] text-slate-400 text-center pt-1">Menampilkan 10 dari ${items.length} butir pada Paket ${runtime.activeVariantKey}.</p>`;
-      }
-
-      window.openPrintableExamModal = function () {
-        const bId = $('variantSourceBatchSelect')?.value || db.batches[0]?.id;
-        const batch = db.batches.find((b) => b.id === bId) || db.batches[0];
-        const items = runtime.variantCache[runtime.activeVariantKey] || batch?.questions || [];
-        const pc = $('printContainer');
-        if (!batch || !pc) return;
-
-        pc.innerHTML = `
-          <div style="border-bottom:3px double #000;padding-bottom:10px;margin-bottom:16px;text-align:center;">
-            <div style="font-size:12px;font-weight:700;letter-spacing:1px;">PEMERINTAH PROVINSI JAWA TIMUR • DINAS PENDIDIKAN</div>
-            <div style="font-size:17px;font-weight:800;margin:2px 0;">SMA NEGERI 1 GONDANGLEGI</div>
-            <div style="font-size:11px;">Jl. Raya Ketawang No. 2, Gondanglegi, Kab. Malang • SMATECH Assessment System</div>
-          </div>
-          <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:14px;border:1px solid #000;padding:8px;">
-            <div><strong>Mata Pelajaran:</strong> Informatika (${escapeHtml(batch.className)})<br/><strong>Paket:</strong> ${escapeHtml(batch.title)}</div>
-            <div style="text-align:right;"><strong>Varian Soal:</strong> PAKET ${runtime.activeVariantKey}<br/><strong>Jumlah:</strong> ${items.length} Butir Pilihan Ganda</div>
-          </div>
-          ${items.map((q) => `
-            <div style="margin-bottom:12px;font-size:12px;page-break-inside:avoid;">
-              <div style="font-weight:700;margin-bottom:3px;">${q.number}. ${escapeHtml(q.question)}</div>
-              <div style="padding-left:16px;display:grid;grid-template-columns:1fr 1fr;gap:2px 14px;">
-                <div>A. ${escapeHtml(q.options.A)}</div>
-                <div>B. ${escapeHtml(q.options.B)}</div>
-                <div>C. ${escapeHtml(q.options.C)}</div>
-                <div>D. ${escapeHtml(q.options.D)}</div>
-                <div>E. ${escapeHtml(q.options.E)}</div>
+        const found = db.students.find((s) => s.nis === nis);
+        if (found) {
+          box.className = 'p-3.5 rounded-2xl border border-emerald-300 bg-emerald-50/70 transition';
+          box.innerHTML = `<div class="flex items-center justify-between gap-3 text-xs">
+            <div class="flex items-center gap-3">
+              <div class="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold shrink-0"><i data-lucide="user-check" class="w-4 h-4"></i></div>
+              <div>
+                <strong class="text-slate-900 block">${escapeHtml(found.name)}</strong>
+                <span class="text-emerald-800 font-semibold">NIS ${escapeHtml(found.nis)} • Kelas ${escapeHtml(found.className)}</span>
               </div>
             </div>
-          `).join('')}
+            <span class="px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-800 font-extrabold">${found.active ? 'TERDAFTAR' : 'NONAKTIF'}</span>
+          </div>`;
+        } else {
+          box.className = 'p-3.5 rounded-2xl border border-amber-300 bg-amber-50/70 transition';
+          box.innerHTML = `<div class="flex items-center gap-3 text-xs text-amber-900">
+            <div class="w-9 h-9 rounded-xl bg-amber-200 text-amber-800 flex items-center justify-center shrink-0"><i data-lucide="help-circle" class="w-4 h-4"></i></div>
+            <div><strong class="block">NIS Belum Ditemukan di Cache Lokal</strong><span>Sistem akan memeriksa otomatis ke Google Sheets saat tombol Validasi ditekan.</span></div>
+          </div>`;
+        }
+        renderIcons();
+      }
+
+      async function syncDashboardFromCloud(silent = false) {
+// ... existing code ... -->
+      window.printStudentExamCards = function () {
+        const pc = $('printContainer');
+        if (!pc) return;
+        const activeStudents = db.students.filter((s) => s.active).slice(0, 24);
+        pc.innerHTML = `
+          <div style="text-align:center;margin-bottom:14px;">
+            <strong style="font-size:15px;">KARTU PESERTA ASESMEN CBT — SMAN 1 GONDANGLEGI</strong>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+            ${activeStudents.map((s) => `
+              <div style="border:1.5px solid #000;border-radius:8px;padding:10px;font-size:11px;page-break-inside:avoid;">
+                <div style="font-weight:800;border-bottom:1px solid #000;padding-bottom:4px;margin-bottom:6px;">
+                  SMATECH CBT • SMAN 1 GONDANGLEGI
+                </div>
+                <div><strong>Nama:</strong> ${escapeHtml(s.name)}</div>
+                <div><strong>NIS:</strong> <span style="font-family:monospace;font-weight:700;">${escapeHtml(s.nis)}</span></div>
+                <div><strong>Kelas:</strong> ${escapeHtml(s.className)}</div>
+              </div>
+            `).join('')}
+          </div>
         `;
         window.print();
       };
 
-      window.exportVariantCsv = function () {
-        const items = runtime.variantCache[runtime.activeVariantKey] || [];
-        downloadQuestionsCsv(items, `SMATECH-Paket-${runtime.activeVariantKey}.csv`);
-      };
+      window.createNewTokenSession = function () {
+        const title = ($('liveExamTitleInput')?.value || '').trim();
+        const batchId = $('liveBatchSelect')?.value || db.batches[0]?.id;
+        const token = ($('liveTokenInput')?.value || '').trim().toUpperCase();
+        const targetClass = $('liveTargetClassSelect')?.value || 'ALL';
+        const durationMinutes = parseInt($('liveDurationInput')?.value, 10) || 60;
+        const kkm = parseInt($('liveKkmInput')?.value, 10) || 75;
+        const maxViolations = parseInt($('liveMaxCheatSelect')?.value, 10) || 3;
 
-      window.refreshMixStatus = function () {
-        const c1 = parseInt($('mixRatioSlider')?.value, 10) || 20;
-        const c2 = 40 - c1;
-        if ($('mixLeftCount')) $('mixLeftCount').textContent = String(c1);
-        if ($('mixRightCount')) $('mixRightCount').textContent = String(c2);
-
-        const b1 = db.batches.find((b) => b.id === $('mixSource1Select')?.value);
-        const b2 = db.batches.find((b) => b.id === $('mixSource2Select')?.value);
-        const box = $('mixDuplicateCheckBox');
-        if (!box || !b1 || !b2) return;
-
-        const slice1 = b1.questions.slice(0, c1);
-        const slice2 = b2.questions.slice(0, c2);
-        const texts1 = new Set(slice1.map((q) => q.question.trim().toLowerCase()));
-        const dupCount = slice2.filter((q) => texts1.has(q.question.trim().toLowerCase())).length;
-
-        if (dupCount > 0) {
-          box.className = 'text-[11px] text-amber-800 font-bold flex items-center gap-1.5 pt-1';
-          box.innerHTML = `<i data-lucide="alert-triangle" class="w-3.5 h-3.5 text-amber-600"></i><span>Peringatan duplikasi: ${dupCount} soal identik terdeteksi antara dua batch.</span>`;
-        } else {
-          box.className = 'text-[11px] text-emerald-700 font-semibold flex items-center gap-1.5 pt-1';
-          box.innerHTML = `<i data-lucide="check-circle-2" class="w-3.5 h-3.5"></i><span>Pemeriksaan duplikasi teks soal: 0 duplikat terdeteksi.</span>`;
-        }
-        renderIcons();
-      };
-
-      function getMixed40List() {
-        const c1 = parseInt($('mixRatioSlider')?.value, 10) || 20;
-        const c2 = 40 - c1;
-        const b1 = db.batches.find((b) => b.id === $('mixSource1Select')?.value) || db.batches[0];
-        const b2 = db.batches.find((b) => b.id === $('mixSource2Select')?.value) || db.batches[0];
-        if (!b1 || !b2) return [];
-        return b1.questions.slice(0, c1).concat(b2.questions.slice(0, c2)).slice(0, 40).map((q, i) => ({
-          number: i + 1,
-          question: q.question,
-          options: { ...q.options },
-          answer: q.answer,
-          level: q.level || 'C2'
-        }));
-      }
-
-      window.saveCombinedBatch40 = function () {
-        const mixed = getMixed40List();
-        if (mixed.length !== 40) {
-          showToast('Gagal merakit: total soal harus 40 butir.', 'error');
+        if (!title || token.length < 4) {
+          showToast('Lengkapi Judul Sesi Ujian dan Kode Token minimal 4 karakter.', 'error');
           return;
         }
-        const b1 = db.batches.find((b) => b.id === $('mixSource1Select')?.value) || db.batches[0];
-        const title = ($('mixNewTitleInput')?.value || '').trim() || `Paket Gabungan Lintas Batch (${new Date().toLocaleDateString('id-ID')})`;
-        const author = runtime.activeTeacher || INFORMATICS_TEACHERS[0];
+        if (db.tokens.some((t) => t.token === token)) {
+          showToast(`Kode Token "${token}" sudah digunakan. Silakan acak ulang.`, 'warning');
+          return;
+        }
 
-        db.batches.unshift({
-          id: `MIX-${String(Date.now()).slice(-4)}`,
+        const newTokenObj = {
+          token,
           title,
-          className: b1.className,
-          topic: 'Gabungan Lintas Materi',
-          authorId: author.id,
-          authorName: author.name,
-          createdAt: new Date().toISOString(),
-          questions: mixed
-        });
+          batchId,
+          targetClass,
+          durationMinutes,
+          kkm,
+          maxViolations,
+          randomize: Boolean($('liveRandomizeCheck')?.checked),
+          enforceFullscreen: Boolean($('liveFullscreenCheck')?.checked),
+          showScore: Boolean($('liveShowScoreCheck')?.checked),
+          status: 'AKTIF',
+          createdBy: runtime.activeTeacher?.name || 'Guru Informatika'
+        };
+
+        db.tokens.unshift(newTokenObj);
+
         persistDb();
         populateAllDropdowns();
-        if ($('mixNewTitleInput')) $('mixNewTitleInput').value = '';
-        showToast('Paket gabungan 40 soal berhasil disimpan ke Bank Soal!', 'success');
-      };
+        renderActiveTokensGrid();
+        window.populateNewTokenCode();
+        showToast(`Token sesi "${token}" berhasil diterbitkan!`, 'success');
 
-      window.exportMixedCsv = function () {
-        downloadQuestionsCsv(getMixed40List(), 'SMATECH-Paket-Gabungan-40.csv');
-      };
-
-      function downloadQuestionsCsv(questions, filename) {
-        const rows = [['No', 'Pertanyaan', 'Opsi A', 'Opsi B', 'Opsi C', 'Opsi D', 'Opsi E', 'Kunci', 'Level']];
-        questions.forEach((q, i) => {
-          rows.push([i + 1, q.question, q.options.A, q.options.B, q.options.C, q.options.D, q.options.E, q.answer, q.level]);
-        });
-        triggerCsvDownload(rows, filename);
-        showToast(`File ${filename} berhasil diunduh.`, 'success');
-      }
-
-      function triggerCsvDownload(rows, filename) {
-        const csv = rows.map((r) => r.map((c) => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
-        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      }
-
-      // =====================================================================
-      // 6. TAB 4: DATA SISWA (X & XI)
-      // =====================================================================
-      window.renderStudentDirectory = function () {
-        const tbody = $('studentDirectoryTbody');
-        if (!tbody) return;
-
-        const q = ($('studentSearchInput')?.value || '').trim().toLowerCase();
-        const clsFilter = $('studentClassFilterSelect')?.value || 'ALL';
-
-        const list = db.students.filter((s) => {
-          const okQ = !q || s.nis.toLowerCase().includes(q) || s.name.toLowerCase().includes(q);
-          const okC = clsFilter === 'ALL' ||
-            (clsFilter === 'PREFIX_X' && s.className.startsWith('X-')) ||
-            (clsFilter === 'PREFIX_XI' && s.className.startsWith('XI-'));
-          return okQ && okC;
-        });
-
-        if (list.length === 0) {
-          tbody.innerHTML = `<tr><td colspan="5" class="p-8 text-center text-slate-400">Tidak ada data siswa yang sesuai.</td></tr>`;
-          return;
-        }
-
-        tbody.innerHTML = list.map((s) => `
-          <tr class="hover:bg-slate-50/80">
-            <td class="p-3.5 font-mono font-bold text-slate-800 tabular-nums">${escapeHtml(s.nis)}</td>
-            <td class="p-3.5 font-bold text-slate-900">${escapeHtml(s.name)}</td>
-            <td class="p-3.5"><span class="px-2.5 py-0.5 rounded-md bg-indigo-50 text-indigo-700 font-bold">${escapeHtml(s.className)}</span></td>
-            <td class="p-3.5 text-center">
-              <span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${
-                s.active ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-500 border-slate-300'
-              }">
-                ${s.active ? 'AKTIF' : 'NONAKTIF'}
-              </span>
-            </td>
-            <td class="p-3.5 text-right">
-              <button type="button" onclick="toggleStudentActive('${escapeHtml(s.nis)}')"
-                class="px-3 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 text-[11px] font-bold text-slate-700">
-                ${s.active ? 'Nonaktifkan' : 'Aktifkan'}
-              </button>
-            </td>
-          </tr>
-        `).join('');
-      };
-
-      window.toggleStudentActive = function (nis) {
-        const s = db.students.find((item) => item.nis === nis);
-        if (!s) return;
-        s.active = !s.active;
-        persistDb();
-        renderStudentDirectory();
-        showToast(`Status ${s.name} diubah menjadi ${s.active ? 'AKTIF' : 'NONAKTIF'}.`, 'info');
-      };
-
-      window.openImportStudentsModal = function () {
-        $('importStudentsModal')?.classList.remove('hidden');
-      };
-
-      window.fillSampleImportStudents = function () {
-        if ($('importStudentsTextarea')) {
-          $('importStudentsTextarea').value = [
-            '261015; Arjuna Wijaya Kusuma; X-6',
-            '261016; Zahra Khairunnisa; X-7',
-            '252015; Bayu Setiawan; XI-5',
-            '252016; Amelia Putri Pertiwi; XI-8'
-          ].join('\n');
-        }
-      };
-
-      window.processStudentBulkImport = function () {
-        const raw = ($('importStudentsTextarea')?.value || '').trim();
-        if (!raw) {
-          showToast('Masukkan data siswa terlebih dahulu.', 'error');
-          return;
-        }
-        const lines = raw.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-        let added = 0;
-        const importedList = [];
-
-        lines.forEach((line) => {
-          const cols = line.split(/[;,]/).map((c) => c.trim());
-          if (cols.length >= 3 && cols[0] && cols[1] && cols[2]) {
-            const exists = db.students.some((s) => s.nis === cols[0]);
-            if (!exists) {
-              const rec = { nis: cols[0], name: cols[1], className: cols[2].toUpperCase(), active: true };
-              db.students.unshift(rec);
-              importedList.push({ nis: rec.nis, nama: rec.name, kelas: rec.className, status: 'AKTIF' });
-              added++;
-            }
+        smatechApi('createToken', {
+          token: {
+            token_code: newTokenObj.token,
+            judul_ujian: newTokenObj.title,
+            batch_id: newTokenObj.batchId,
+            target_kelas: newTokenObj.targetClass,
+            durasi_menit: newTokenObj.durationMinutes,
+            kkm: newTokenObj.kkm,
+            max_pelanggaran: newTokenObj.maxViolations,
+            acak_soal: newTokenObj.randomize,
+            wajib_fullscreen: newTokenObj.enforceFullscreen,
+            tampil_nilai: newTokenObj.showScore,
+            dibuat_oleh: newTokenObj.createdBy
           }
-        });
+        }).catch(() => {});
+      };
 
+      function renderActiveTokensGrid() {
+        const grid = $('activeTokensGrid');
+        if (!grid) return;
+        if ($('tokenActiveSummaryPill')) {
+          $('tokenActiveSummaryPill').textContent = `${db.tokens.length} Token`;
+        }
+        if (db.tokens.length === 0) {
+          grid.innerHTML = `<div class="p-6 text-center text-xs text-slate-400 border border-dashed border-slate-300 rounded-2xl">Belum ada token sesi ujian.</div>`;
+          return;
+        }
+        grid.innerHTML = db.tokens.map((t, idx) => {
+          const isOpen = t.status === 'AKTIF';
+          return `
+            <div class="p-4 rounded-2xl border ${isOpen ? 'border-emerald-200 bg-emerald-50/30' : 'border-slate-200 bg-slate-50'} flex flex-wrap items-center justify-between gap-3">
+              <div class="space-y-1">
+                <div class="flex items-center gap-2">
+                  <span class="px-3 py-1 rounded-lg bg-brand-950 text-cyan-300 font-mono text-sm font-extrabold tracking-widest">${escapeHtml(t.token)}</span>
+                  <span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold ${isOpen ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}">${escapeHtml(t.status)}</span>
+                </div>
+                <h4 class="text-xs sm:text-sm font-extrabold text-slate-900">${escapeHtml(t.title)}</h4>
+                <p class="text-[11px] text-slate-500">Target: <strong>${escapeHtml(t.targetClass)}</strong> • Durasi: ${t.durationMinutes} mnt • KKM: ${t.kkm}</p>
+              </div>
+              <button type="button" onclick="toggleTokenLock(${idx})"
+                class="px-3.5 py-2 rounded-xl text-xs font-bold border transition ${
+                  isOpen
+                    ? 'bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-200'
+                    : 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600'
+                }">
+                ${isOpen ? 'Kunci Sesi' : 'Buka Sesi'}
+              </button>
+            </div>
+          `;
+        }).join('');
+      }
+
+      window.toggleTokenLock = function (idx) {
+        const t = db.tokens[idx];
+        if (!t) return;
+        t.status = t.status === 'AKTIF' ? 'TERKUNCI' : 'AKTIF';
         persistDb();
-        renderStudentDirectory();
-        closeModal('importStudentsModal');
-        showToast(`${added} siswa baru berhasil diimpor ke database!`, 'success');
+        renderActiveTokensGrid();
+        showToast(`Status token ${t.token} diubah menjadi ${t.status}.`, 'info');
+        smatechApi('toggleTokenStatus', { tokenCode: t.token, status: t.status }).catch(() => {});
+      };
 
-        if (importedList.length > 0) {
-          smatechApi('importStudents', { students: importedList }).catch(() => {});
+      function renderLiveProctoringTable() {
+        const tbody = $('proctoringTbody');
+        if (!tbody) return;
+        const filterTok = $('proctorTokenFilter')?.value || 'ALL';
+        const rows = db.attempts.filter((a) => filterTok === 'ALL' || a.token === filterTok);
+
+        if (rows.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-slate-400">Belum ada peserta aktif pada sesi ini.</td></tr>`;
+          return;
+        }
+
+        tbody.innerHTML = rows.map((a) => {
+          const pct = Math.min(100, Math.round(((a.answeredCount || 0) / (a.totalQuestions || 40)) * 100));
+          const statusBadge = a.status === 'TERKUNCI'
+            ? 'bg-rose-100 text-rose-800 border-rose-200'
+            : a.status === 'SELESAI'
+              ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
+              : 'bg-indigo-100 text-indigo-800 border-indigo-200';
+          return `
+            <tr class="hover:bg-slate-50/80">
+              <td class="p-3.5">
+                <strong class="block text-slate-900">${escapeHtml(a.name)}</strong>
+                <span class="text-[11px] font-mono text-slate-500">${escapeHtml(a.nis)} • ${escapeHtml(a.className)}</span>
+              </td>
+              <td class="p-3.5 font-mono font-bold text-brand-900">${escapeHtml(a.token)}</td>
+              <td class="p-3.5">
+                <div class="flex items-center gap-2">
+                  <div class="w-24 h-2 bg-slate-200 rounded-full overflow-hidden">
+                    <div class="h-full bg-indigo-600" style="width:${pct}%"></div>
+                  </div>
+                  <span class="font-mono font-bold tabular-nums">${a.answeredCount || 0}/${a.totalQuestions || 40}</span>
+                </div>
+              </td>
+              <td class="p-3.5 text-center">
+                <span class="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold border ${statusBadge}">${escapeHtml(a.status)}</span>
+              </td>
+              <td class="p-3.5 text-center">
+                <button type="button" onclick="openViolationLogModal('${escapeHtml(a.id)}')"
+                  class="px-2.5 py-1 rounded-lg font-mono font-bold ${a.violations > 0 ? 'bg-rose-50 text-rose-700 border border-rose-200' : 'bg-slate-100 text-slate-600'}">
+                  ${a.violations}x Log
+                </button>
+              </td>
+              <td class="p-3.5 text-right">
+                <button type="button" onclick="resetAttemptUnlock('${escapeHtml(a.id)}')"
+                  class="px-3 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-[11px] font-bold">
+                  Reset & Buka Kunci
+                </button>
+              </td>
+            </tr>
+          `;
+        }).join('');
+      }
+
+      window.openViolationLogModal = function (attemptId) {
+        const att = db.attempts.find((a) => a.id === attemptId);
+        if (!att) return;
+        if ($('vLogStudentTitle')) $('vLogStudentTitle').textContent = `Log Pelanggaran: ${att.name}`;
+        if ($('vLogStudentMeta')) $('vLogStudentMeta').textContent = `NIS ${att.nis} • Kelas ${att.className} • Token ${att.token}`;
+        const body = $('vLogListBody');
+        if (body) {
+          const logs = att.violationLogs || [];
+          body.innerHTML = logs.length === 0
+            ? `<p class="text-slate-500 text-center py-4">Tidak ada catatan pelanggaran keamanan.</p>`
+            : logs.map((l, i) => `
+                <div class="p-3 rounded-xl bg-rose-50 border border-rose-200 flex items-center justify-between gap-2">
+                  <span class="font-semibold text-rose-950">#${i + 1} • ${escapeHtml(l.reason)}</span>
+                  <span class="font-mono text-rose-700 font-bold shrink-0">${escapeHtml(l.time)}</span>
+                </div>
+              `).join('');
+        }
+        $('violationLogModal')?.classList.remove('hidden');
+      };
+
+      window.resetAttemptUnlock = function (attemptId) {
+        const idx = db.attempts.findIndex((a) => a.id === attemptId);
+        if (idx === -1) return;
+        const target = db.attempts[idx];
+        const name = target.name;
+        db.attempts.splice(idx, 1);
+        persistDb();
+        renderLiveProctoringTable();
+        showToast(`Sesi ujian ${name} telah di-reset. Siswa dapat masuk kembali menggunakan token.`, 'success');
+        smatechApi('resetStudentExam', { tokenCode: target.token, nis: target.nis }).catch(() => {});
+      };
+
+      window.switchResultsSubTab = function (tab) {
+        runtime.resultsSubTab = tab === 'items' ? 'items' : 'grades';
+        $('resultsGradesPane')?.classList.toggle('hidden', runtime.resultsSubTab !== 'grades');
+        $('resultsItemsPane')?.classList.toggle('hidden', runtime.resultsSubTab !== 'items');
+        if ($('resSubTabGradesBtn')) {
+          $('resSubTabGradesBtn').className = runtime.resultsSubTab === 'grades'
+            ? 'px-4 py-2 rounded-xl text-xs font-bold bg-brand-900 text-white transition'
+            : 'px-4 py-2 rounded-xl text-xs font-bold bg-slate-100 text-slate-700 hover:bg-slate-200 transition';
+        }
+        if ($('resSubTabItemsBtn')) {
+          $('resSubTabItemsBtn').className = runtime.resultsSubTab === 'items'
+            ? 'px-4 py-2 rounded-xl text-xs font-bold bg-brand-900 text-white transition'
+            : 'px-4 py-2 rounded-xl text-xs font-bold bg-slate-100 text-slate-700 hover:bg-slate-200 transition';
         }
       };
 
@@ -2844,44 +1934,35 @@
               `;
             }).join('');
           }
-        const newTokenObj = {
-          token,
-          title,
-          batchId,
-          targetClass,
-          durationMinutes,
-          kkm,
-          maxViolations,
-          randomize: Boolean($('liveRandomizeCheck')?.checked),
-          enforceFullscreen: Boolean($('liveFullscreenCheck')?.checked),
-          showScore: Boolean($('liveShowScoreCheck')?.checked),
-          status: 'AKTIF',
-          createdBy: runtime.activeTeacher?.name || 'Guru Informatika'
-        };
+        }
 
-        db.tokens.unshift(newTokenObj);
-
-        persistDb();
-        populateAllDropdowns();
-        renderActiveTokensGrid();
-        window.populateNewTokenCode();
-        showToast(`Token sesi "${token}" berhasil diterbitkan!`, 'success');
-
-        smatechApi('createToken', {
-          token: {
-            token_code: newTokenObj.token,
-            judul_ujian: newTokenObj.title,
-            batch_id: newTokenObj.batchId,
-            target_kelas: newTokenObj.targetClass,
-            durasi_menit: newTokenObj.durationMinutes,
-            kkm: newTokenObj.kkm,
-            max_pelanggaran: newTokenObj.maxViolations,
-            acak_soal: newTokenObj.randomize,
-            wajib_fullscreen: newTokenObj.enforceFullscreen,
-            tampil_nilai: newTokenObj.showScore,
-            dibuat_oleh: newTokenObj.createdBy
-          }
-        }).catch(() => {});
+        // Render Item Analysis (1-40)
+        const iBody = $('resultsItemsTbody');
+        const batch = db.batches.find((b) => b.id === tokObj.batchId) || db.batches[0];
+        if (iBody && batch) {
+          iBody.innerHTML = batch.questions.map((q, idx) => {
+            const totalAns = completed.length;
+            const correctAns = completed.filter((a) => a.answers?.[idx] === q.answer).length;
+            const pIndex = totalAns ? Math.round((correctAns / totalAns) * 100) : 0;
+            const label = pIndex >= 70 ? 'Mudah' : pIndex >= 35 ? 'Sedang' : 'Sukar';
+            const badgeTone = pIndex >= 70
+              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+              : pIndex >= 35
+                ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                : 'bg-rose-50 text-rose-700 border-rose-200';
+            return `
+              <tr class="hover:bg-slate-50/80">
+                <td class="p-3.5 text-center font-mono font-bold text-slate-600 tabular-nums">${idx + 1}</td>
+                <td class="p-3.5 text-slate-800">${escapeHtml(q.question)}</td>
+                <td class="p-3.5 text-center font-mono font-extrabold text-brand-900">${escapeHtml(q.answer)}</td>
+                <td class="p-3.5 text-center font-mono font-bold tabular-nums">${pIndex}% (${correctAns}/${totalAns})</td>
+                <td class="p-3.5 text-center">
+                  <span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${badgeTone}">${label}</span>
+                </td>
+              </tr>
+            `;
+          }).join('');
+        }
       };
 
       window.exportResultsCsv = function () {
@@ -2896,14 +1977,14 @@
             a.name,
             a.className,
             a.token,
-      window.toggleTokenLock = function (idx) {
-        const t = db.tokens[idx];
-        if (!t) return;
-        t.status = t.status === 'AKTIF' ? 'TERKUNCI' : 'AKTIF';
-        persistDb();
-        renderActiveTokensGrid();
-        showToast(`Status token ${t.token} diubah menjadi ${t.status}.`, 'info');
-        smatechApi('toggleTokenStatus', { tokenCode: t.token, status: t.status }).catch(() => {});
+            a.correctCount || 0,
+            a.score ?? 0,
+            (a.score || 0) >= (tokObj.kkm || 75) ? 'TUNTAS' : 'REMEDIAL',
+            a.violations || 0
+          ]);
+        });
+        triggerCsvDownload(rows, `SMATECH-Nilai-${tokObj.token}.csv`);
+        showToast(`Rekap nilai ${tokObj.token} berhasil diunduh.`, 'success');
       };
 
       window.printOfficialExamReport = function () {
@@ -2949,712 +2030,37 @@
                   <td style="border:1px solid #000;padding:5px;text-align:center;font-weight:700;">${a.score ?? 0}</td>
                   <td style="border:1px solid #000;padding:5px;text-align:center;">${(a.score || 0) >= (tokObj.kkm || 75) ? 'TUNTAS' : 'REMEDIAL'}</td>
                 </tr>
-      window.resetAttemptUnlock = function (attemptId) {
-        const idx = db.attempts.findIndex((a) => a.id === attemptId);
-        if (idx === -1) return;
-        const target = db.attempts[idx];
-        const name = target.name;
-        db.attempts.splice(idx, 1);
-        persistDb();
-        renderLiveProctoringTable();
-        showToast(`Sesi ujian ${name} telah di-reset. Siswa dapat masuk kembali menggunakan token.`, 'success');
-        smatechApi('resetStudentExam', { tokenCode: target.token, nis: target.nis }).catch(() => {});
+              `).join('')}
+            </tbody>
+          </table>
+        `;
+        window.print();
       };
       async function handleStudentCbtAuth(e) {
-        e.preventDefault();
-        const nis = ($('cbtNisInput')?.value || '').trim();
-        const tokenCode = ($('cbtTokenCodeInput')?.value || '').trim().toUpperCase();
-        const alertBox = $('studentLoginAlertBox');
-
-        // Coba verifikasi ke Google Sheets terlebih dahulu jika tersedia
-        if (isApiReady()) {
-          try {
-            const cloudRes = await smatechApi('verifyStudentToken', { nis, tokenCode });
-            if (cloudRes.student && !db.students.some((s) => s.nis === String(cloudRes.student.nis))) {
-              db.students.push({
-                nis: String(cloudRes.student.nis),
-                name: String(cloudRes.student.nama),
-                className: String(cloudRes.student.kelas),
-                active: true
-              });
-            }
-            if (cloudRes.token && !db.tokens.some((t) => t.token === String(cloudRes.token.token_code).toUpperCase())) {
-              db.tokens.push({
-                token: String(cloudRes.token.token_code).toUpperCase(),
-                title: String(cloudRes.token.judul_ujian || 'Ujian Informatika'),
-                batchId: String(cloudRes.token.batch_id || ''),
-                targetClass: String(cloudRes.token.target_kelas || 'ALL'),
-                durationMinutes: Number(cloudRes.token.durasi_menit) || 60,
-                kkm: Number(cloudRes.token.kkm) || 75,
-                maxViolations: Number(cloudRes.token.max_pelanggaran) || 3,
-                randomize: String(cloudRes.token.acak_soal) === 'true' || cloudRes.token.acak_soal === true,
-                enforceFullscreen: String(cloudRes.token.wajib_fullscreen) === 'true' || cloudRes.token.wajib_fullscreen === true,
-                showScore: String(cloudRes.token.tampil_nilai) === 'true' || cloudRes.token.tampil_nilai === true,
-                status: 'AKTIF',
-                createdBy: String(cloudRes.token.dibuat_oleh || 'Guru Informatika')
-              });
-            }
-            if (Array.isArray(cloudRes.questions) && cloudRes.questions.length > 0 && cloudRes.token) {
-              const bId = String(cloudRes.token.batch_id);
-              const mappedQs = cloudRes.questions.map((q, idx) => ({
-                number: Number(q.nomor) || idx + 1,
-                question: String(q.pertanyaan || ''),
-                options: {
-                  A: String(q.opsi_a || ''),
-                  B: String(q.opsi_b || ''),
-                  C: String(q.opsi_c || ''),
-                  D: String(q.opsi_d || ''),
-                  E: String(q.opsi_e || '')
-                },
-                answer: String(q.kunci || 'A').toUpperCase(),
-                level: String(q.level_kognitif || 'C2')
-              }));
-              const existingBatch = db.batches.find((b) => b.id === bId);
-              if (existingBatch) {
-                existingBatch.questions = mappedQs;
-              } else {
-                db.batches.unshift({
-                  id: bId,
-                  title: String(cloudRes.token.judul_ujian || bId),
-                  className: String(cloudRes.student.kelas || 'Kelas X'),
-                  topic: 'Informatika',
-                  authorId: 'GURU-01',
-                  authorName: 'Tim Guru Informatika',
-                  createdAt: new Date().toISOString(),
-                  questions: mappedQs
-                });
-              }
-            }
-            persistDb();
-          } catch (cloudErr) {
-            // Jika sheet belum diisi data atau offline, lanjutkan ke pengecekan lokal
-          }
-        }
-
-        const student = db.students.find((s) => s.nis === nis);
-        if (!student) {
-          if (alertBox) {
-            alertBox.textContent = `NIS "${nis}" tidak terdaftar di Database Siswa SMAN 1 Gondanglegi.`;
-            alertBox.classList.remove('hidden');
-          }
-          return;
-        }
-        if (!student.active) {
-          if (alertBox) {
-            alertBox.textContent = 'Status peserta didik NONAKTIF. Silakan hubungi guru pengawas.';
-            alertBox.classList.remove('hidden');
-          }
-          return;
-        }
-
-        const tok = db.tokens.find((t) => t.token === tokenCode);
-        if (!tok) {
-          if (alertBox) {
-            alertBox.textContent = `Kode Token "${tokenCode}" tidak ditemukan. Periksa kembali token dari pengawas.`;
-            alertBox.classList.remove('hidden');
-          }
-          return;
-        }
-        if (tok.status !== 'AKTIF') {
-          if (alertBox) {
-            alertBox.textContent = `Sesi ujian dengan token "${tokenCode}" sedang TERKUNCI / ditutup pengawas.`;
-            alertBox.classList.remove('hidden');
-          }
-          return;
-        }
-
-        // Validate target class
-        const classMatch =
-          tok.targetClass === 'ALL' ||
-          (tok.targetClass === 'KELAS_X' && student.className.startsWith('X-')) ||
-          (tok.targetClass === 'KELAS_XI' && student.className.startsWith('XI-')) ||
-          tok.targetClass === student.className;
-
-        if (!classMatch) {
-          if (alertBox) {
-            alertBox.textContent = `Token ${tokenCode} diperuntukkan bagi ${tok.targetClass}, sedangkan Anda terdaftar di kelas ${student.className}.`;
-            alertBox.classList.remove('hidden');
-          }
-          return;
-        }
-
-        // Check existing finished/locked attempt
-        const prevAtt = db.attempts.find((a) => a.token === tokenCode && a.nis === nis);
-        if (prevAtt && (prevAtt.status === 'SELESAI' || prevAtt.status === 'TERKUNCI')) {
-          if (alertBox) {
-            alertBox.textContent = `Anda sudah berstatus "${prevAtt.status}" pada sesi token ${tokenCode}. Minta pengawas untuk Reset jika diperlukan.`;
-            alertBox.classList.remove('hidden');
-          }
-          return;
-        }
-
-        alertBox?.classList.add('hidden');
-        const batch = db.batches.find((b) => b.id === tok.batchId) || db.batches[0];
-        const questions = createShuffledVariant(batch.questions, false, Boolean(tok.randomize));
-
-        let attempt = prevAtt;
-        if (!attempt) {
-          attempt = {
-            id: `ATT-${Date.now()}`,
-            token: tokenCode,
-            nis: student.nis,
-            name: student.name,
-            className: student.className,
-            status: 'MENGERJAKAN',
-            answeredCount: 0,
-            totalQuestions: questions.length,
-            correctCount: 0,
-            score: 0,
-            violations: 0,
-            violationLogs: [],
-            answers: {},
-            finishedAt: ''
-          };
-          db.attempts.unshift(attempt);
-          persistDb();
-        }
-
-        runtime.cbtSession = {
-          attemptId: attempt.id,
-          student,
-          tokenConfig: tok,
-          questions,
-          answers: { ...(attempt.answers || {}) },
-          flagged: {},
-          currentIndex: 0,
-          remainingSeconds: (tok.durationMinutes || 60) * 60,
-          violations: attempt.violations || 0,
-          violationLogs: attempt.violationLogs || [],
-          isRunning: false
-        };
-
-        // Transition to Pre-flight Integrity Pact
-        $('authGateView')?.classList.add('hidden');
-        $('teacherWorkspaceView')?.classList.add('hidden');
-        $('studentCbtView')?.classList.remove('hidden');
-        $('cbtPreflightStep')?.classList.remove('hidden');
-        $('cbtActiveStep')?.classList.add('hidden');
-        $('cbtSummaryStep')?.classList.add('hidden');
-
-        if ($('preflightExamTitle')) $('preflightExamTitle').textContent = tok.title;
-        if ($('preflightStudentLine')) $('preflightStudentLine').textContent = `${student.name} • NIS ${student.nis} • Kelas ${student.className}`;
-        if ($('preflightTokenText')) $('preflightTokenText').textContent = tok.token;
-        if ($('preflightDurationText')) $('preflightDurationText').textContent = `${tok.durationMinutes} Menit`;
-        if ($('preflightKkmText')) $('preflightKkmText').textContent = String(tok.kkm);
-        if ($('preflightMaxCheatText')) $('preflightMaxCheatText').textContent = `Maks. ${tok.maxViolations}x`;
-        renderIcons();
-      }
-
-      window.startActiveCbtSession = function () {
-        const sess = runtime.cbtSession;
-        if (!sess) return;
-        sess.isRunning = true;
-
-        // Best-effort fullscreen request (gracefully ignored if blocked by iframe sandbox)
-        if (sess.tokenConfig.enforceFullscreen && document.documentElement.requestFullscreen) {
-          try {
-            document.documentElement.requestFullscreen().catch(() => {});
-          } catch (err) {
-            // Safe ignore
-          }
-        }
-
-        $('cbtPreflightStep')?.classList.add('hidden');
-        $('cbtActiveStep')?.classList.remove('hidden');
-
-        if ($('cbtTopStudentPill')) {
-          $('cbtTopStudentPill').textContent = `${sess.student.nis} • ${sess.student.name} (${sess.student.className})`;
-        }
-
-        // Build diagonal watermark tiles
-        const wm = $('cbtWatermarkLayer');
-        if (wm) {
-          const stamp = `${sess.student.nis} • ${sess.student.name} • SMATECH SMAN 1 GONDANGLEGI`;
-          wm.innerHTML = `<div class="w-[200%] h-[200%] -ml-[50%] -mt-[50%] -rotate-12 flex flex-wrap gap-10 p-8 text-xs font-mono font-bold text-slate-900">
-            ${Array.from({ length: 48 }, () => `<span>${escapeHtml(stamp)}</span>`).join('')}
-          </div>`;
-        }
-
-        refreshCbtViolationShield();
-        renderCbtQuestionStage();
-        renderCbtMatrix();
-        startCbtCountdown();
-        renderIcons();
-      };
-
-      function startCbtCountdown() {
-        if (runtime.cbtTimerHandle) clearInterval(runtime.cbtTimerHandle);
-        updateCbtTimerLabel();
-        runtime.cbtTimerHandle = setInterval(() => {
-          const sess = runtime.cbtSession;
-          if (!sess || !sess.isRunning) return;
-          sess.remainingSeconds = Math.max(0, sess.remainingSeconds - 1);
-          updateCbtTimerLabel();
-          if (sess.remainingSeconds <= 0) {
-            window.completeStudentExam('SELESAI', 'Waktu pengerjaan ujian telah habis.');
-          }
-        }, 1000);
-      }
-
-      function updateCbtTimerLabel() {
-        const secs = runtime.cbtSession ? runtime.cbtSession.remainingSeconds : 0;
-        const m = String(Math.floor(secs / 60)).padStart(2, '0');
-        const s = String(secs % 60).padStart(2, '0');
-        if ($('cbtTimerText')) $('cbtTimerText').textContent = `${m}:${s}`;
-      }
-
-      function renderCbtQuestionStage() {
-        const sess = runtime.cbtSession;
-        if (!sess) return;
-        const q = sess.questions[sess.currentIndex];
-        if (!q) return;
-
-        const chosen = sess.answers[sess.currentIndex] || '';
-        const isFlagged = Boolean(sess.flagged[sess.currentIndex]);
-
-        if ($('cbtQNumLabel')) $('cbtQNumLabel').textContent = String(sess.currentIndex + 1);
-        if ($('cbtQLevelTag')) $('cbtQLevelTag').textContent = q.level || 'C2';
-        if ($('cbtQuestionBody')) $('cbtQuestionBody').textContent = q.question;
-
-        const badge = $('cbtQStateBadge');
-        if (badge) {
-          if (isFlagged) {
-            badge.className = 'text-[11px] font-bold px-2.5 py-1 rounded-lg bg-amber-100 text-amber-800';
-            badge.textContent = chosen ? `Ragu-Ragu (${chosen})` : 'Ditandai Ragu-Ragu';
-          } else if (chosen) {
-            badge.className = 'text-[11px] font-bold px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-800';
-            badge.textContent = `Terjawab (${chosen})`;
-          } else {
-            badge.className = 'text-[11px] font-bold px-2.5 py-1 rounded-lg bg-slate-200/80 text-slate-600';
-            badge.textContent = 'Belum Dijawab';
-          }
-        }
-
-        if ($('cbtFlagBtnLabel')) {
-          $('cbtFlagBtnLabel').textContent = isFlagged ? 'Hapus Tanda Ragu' : 'Tandai Ragu-Ragu';
-        }
-
-        const optStack = $('cbtOptionsStack');
-        if (optStack) {
-          optStack.innerHTML = ['A', 'B', 'C', 'D', 'E'].map((k) => {
-            const active = chosen === k;
-            return `
-              <button type="button" onclick="selectCbtOption('${k}')"
-                class="w-full text-left p-4 rounded-2xl border-2 transition flex items-start gap-3.5 ${
-                  active
-                    ? 'border-indigo-600 bg-indigo-50/70 text-brand-950 font-semibold shadow-2xs'
-                    : 'border-slate-200 hover:border-slate-300 bg-white text-slate-700'
-                }">
-                <span class="w-7 h-7 rounded-xl font-mono text-xs font-extrabold flex items-center justify-center shrink-0 transition ${
-                  active ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-700'
-                }">${k}</span>
-                <span class="text-xs sm:text-sm pt-0.5 leading-relaxed">${escapeHtml(q.options?.[k] || '')}</span>
-              </button>
-            `;
-          }).join('');
-        }
-
-        if ($('cbtPrevBtn')) $('cbtPrevBtn').disabled = sess.currentIndex === 0;
-        if ($('cbtNextBtn')) $('cbtNextBtn').disabled = sess.currentIndex >= sess.questions.length - 1;
-      }
-
-      window.selectCbtOption = function (letter) {
-        const sess = runtime.cbtSession;
-        if (!sess || !sess.isRunning) return;
-        sess.answers[sess.currentIndex] = letter;
-
-        const answeredCount = Object.keys(sess.answers).length;
-        if ($('cbtAnsweredCounter')) $('cbtAnsweredCounter').textContent = `${answeredCount} / 40`;
-
-        const att = db.attempts.find((a) => a.id === sess.attemptId);
-        if (att) {
-          att.answeredCount = answeredCount;
-          att.answers = { ...sess.answers };
-          persistDb();
-        }
-
-        renderCbtQuestionStage();
-        renderCbtMatrix();
-      };
-
-      window.toggleCbtDoubtFlag = function () {
-        const sess = runtime.cbtSession;
-        if (!sess || !sess.isRunning) return;
-        sess.flagged[sess.currentIndex] = !sess.flagged[sess.currentIndex];
-        renderCbtQuestionStage();
-        renderCbtMatrix();
-      };
-
-      window.stepCbtQuestion = function (delta) {
-        const sess = runtime.cbtSession;
-        if (!sess) return;
-        const next = sess.currentIndex + delta;
-        if (next >= 0 && next < sess.questions.length) {
-          sess.currentIndex = next;
-          renderCbtQuestionStage();
-          renderCbtMatrix();
-        }
-      };
-
-      window.goToCbtQuestion = function (idx) {
-        const sess = runtime.cbtSession;
-        if (!sess) return;
-        sess.currentIndex = idx;
-        renderCbtQuestionStage();
-        renderCbtMatrix();
-      };
-
-      function renderCbtMatrix() {
-        const sess = runtime.cbtSession;
-        const grid = $('cbtMatrixGrid');
-        if (!sess || !grid) return;
-
-        grid.innerHTML = sess.questions.map((_, idx) => {
-          const isCur = idx === sess.currentIndex;
-          const isFlag = Boolean(sess.flagged[idx]);
-          const isAns = Boolean(sess.answers[idx]);
-
-          let tone = 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200';
-          if (isFlag) {
-            tone = 'bg-amber-400 text-amber-950 border-amber-500 font-extrabold';
-          } else if (isAns) {
-            tone = 'bg-emerald-600 text-white border-emerald-700 font-extrabold';
-          }
-
-          return `
-            <button type="button" onclick="goToCbtQuestion(${idx})"
-              class="h-9 rounded-xl border font-mono text-xs font-bold tabular-nums transition ${tone} ${
-                isCur ? 'ring-2 ring-indigo-600 ring-offset-1' : ''
-              }">
-              ${idx + 1}
-            </button>
-          `;
-        }).join('');
-      }
-
-      // Web Audio API subtle security beep
-      function playSecurityAlertBeep() {
-        try {
-          const AudioCtx = window.AudioContext || window.webkitAudioContext;
-          if (!AudioCtx) return;
-          const ctx = new AudioCtx();
-          const osc = ctx.createOscillator();
-          const gain = ctx.createGain();
-          osc.type = 'sawtooth';
-          osc.frequency.setValueAtTime(520, ctx.currentTime);
-          gain.gain.setValueAtTime(0.08, ctx.currentTime);
-          osc.connect(gain);
-          gain.connect(ctx.destination);
-          osc.start();
-          osc.stop(ctx.currentTime + 0.18);
-        } catch (err) {
-          // Safe ignore if browser blocks autoplay audio
-        }
-      }
-
-      // Debounced Anti-Cheat Handler (1200ms debounce)
-      function handleAntiCheatViolation(reason) {
-        const sess = runtime.cbtSession;
-        if (!sess || !sess.isRunning) return;
-
-        const now = Date.now();
-        if (now - runtime.lastAntiCheatTime < 1200) return;
-        runtime.lastAntiCheatTime = now;
-
-        sess.violations += 1;
-        const timeStr = new Date().toLocaleTimeString('id-ID', { hour12: false });
-        sess.violationLogs.push({ time: timeStr, reason });
-
-        const maxV = sess.tokenConfig.maxViolations || 3;
-        const att = db.attempts.find((a) => a.id === sess.attemptId);
-        if (att) {
-          att.violations = sess.violations;
-          att.violationLogs = sess.violationLogs.slice();
-          persistDb();
-        }
-
-        playSecurityAlertBeep();
-        refreshCbtViolationShield();
-
-        if (sess.violations >= maxV) {
-          closeModal('antiCheatWarningModal');
-          window.completeStudentExam('TERKUNCI', `Ujian dikunci otomatis karena mencapai batas maksimal ${maxV}x pelanggaran.`);
-          return;
-        }
-
-        if ($('acModalReason')) $('acModalReason').textContent = reason;
-        if ($('acModalCounter')) $('acModalCounter').textContent = `${sess.violations} / ${maxV}`;
-        $('antiCheatWarningModal')?.classList.remove('hidden');
-        renderIcons();
-      }
-
-      window.triggerSimulatedAntiCheat = function () {
-        handleAntiCheatViolation('Simulasi Uji Anti-Cheat (Perpindahan Fokus)');
-      };
-
-      window.acknowledgeAntiCheatWarning = function () {
-        closeModal('antiCheatWarningModal');
-        const sess = runtime.cbtSession;
-        if (sess?.tokenConfig?.enforceFullscreen && !document.fullscreenElement && document.documentElement.requestFullscreen) {
-          try {
-            document.documentElement.requestFullscreen().catch(() => {});
-          } catch (err) {
-            // Safe ignore
-          }
-        }
-      };
-
-      function refreshCbtViolationShield() {
-        const sess = runtime.cbtSession;
-        if (!sess) return;
-        const maxV = sess.tokenConfig.maxViolations || 3;
-        if ($('cbtViolationText')) $('cbtViolationText').textContent = `Pelanggaran: ${sess.violations} / ${maxV}`;
-        const shield = $('cbtViolationShield');
-        if (shield) {
-          shield.className = sess.violations > 0
-            ? 'px-3 py-1.5 rounded-xl bg-rose-500/20 border border-rose-500/50 text-rose-300 text-xs font-bold flex items-center gap-1.5 tabular-nums'
-            : 'px-3 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-bold flex items-center gap-1.5 tabular-nums';
-        }
-      }
-
-      window.openCbtSubmitModal = function () {
-        const sess = runtime.cbtSession;
-        if (!sess) return;
-        const ans = Object.keys(sess.answers).length;
-        if ($('confirmSubmitSummary')) {
-          $('confirmSubmitSummary').textContent = `Anda telah menjawab ${ans} dari ${sess.questions.length} butir soal. Setelah dikumpulkan, jawaban tidak dapat diubah kembali.`;
-        }
-        $('confirmCbtSubmitModal')?.classList.remove('hidden');
-      };
-
-      window.completeStudentExam = function (finalStatus, subtitleMsg) {
-        const sess = runtime.cbtSession;
-        if (!sess) return;
-        sess.isRunning = false;
-        if (runtime.cbtTimerHandle) {
-          clearInterval(runtime.cbtTimerHandle);
-          runtime.cbtTimerHandle = null;
-        }
-
-        if (document.fullscreenElement && document.exitFullscreen) {
-          try {
-            document.exitFullscreen().catch(() => {});
-          } catch (err) {
-            // Safe ignore
-          }
-        }
-
-        closeModal('confirmCbtSubmitModal');
-        closeModal('antiCheatWarningModal');
-
-        let correct = 0;
-        sess.questions.forEach((q, idx) => {
-          if (sess.answers[idx] === q.answer) correct++;
-        });
-        const totalQ = sess.questions.length || 40;
-        const score = Math.round((correct / totalQ) * 100);
-        const kkm = sess.tokenConfig.kkm || 75;
-        const isPass = score >= kkm;
-
-        const att = db.attempts.find((a) => a.id === sess.attemptId);
-        if (att) {
-          att.answeredCount = Object.keys(sess.answers).length;
-          att.status = finalStatus;
-          att.correctCount = correct;
-          att.score = score;
-          att.violations = sess.violations;
-          att.violationLogs = sess.violationLogs.slice();
-          att.answers = { ...sess.answers };
-          att.finishedAt = new Date().toLocaleString('id-ID');
-          persistDb();
-
-          // Kirim nilai & log pelanggaran ke Google Apps Script (dengan antrean offline jika gagal)
-          const cloudResultPayload = {
-            token_code: att.token,
-            nis: att.nis,
-            nama_siswa: att.name,
-            kelas: att.className,
-            status_ujian: att.status,
-            skor: att.score,
-            benar: att.correctCount,
-            salah: Math.max(0, totalQ - att.correctCount),
-            jumlah_pelanggaran: att.violations,
-            log_pelanggaran: att.violationLogs,
-            jawaban: att.answers,
-            waktu_mulai: att.finishedAt,
-            waktu_selesai: att.finishedAt
-          };
-
-          smatechApi('submitExamResult', { result: cloudResultPayload }).catch(() => {
-            queueExamResultOffline(cloudResultPayload);
-          });
-        }
-
-        $('cbtActiveStep')?.classList.add('hidden');
-        $('cbtSummaryStep')?.classList.remove('hidden');
-
-        const isLocked = finalStatus === 'TERKUNCI';
-        if ($('summaryStatusPill')) {
-          $('summaryStatusPill').textContent = isLocked ? 'TERKUNCI PELANGGARAN ANTI-CHEAT' : 'UJIAN SELESAI NORMAL';
-          $('summaryStatusPill').className = isLocked
-            ? 'px-3 py-1 rounded-full bg-rose-50 text-rose-700 border border-rose-200 text-xs font-extrabold uppercase tracking-wide'
-            : 'px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-extrabold uppercase tracking-wide';
-        }
-        if ($('summaryTitleText')) $('summaryTitleText').textContent = isLocked ? 'Sesi Ujian Terkunci Otomatis' : 'Ujian Berhasil Dikumpulkan';
-        if ($('summarySubtitleText')) $('summarySubtitleText').textContent = subtitleMsg || '';
-
-        if (sess.tokenConfig.showScore) {
-          $('summaryMetricsCard')?.classList.remove('hidden');
-          if ($('summaryScoreNumber')) $('summaryScoreNumber').textContent = String(score);
-          if ($('summaryBreakdownNumber')) $('summaryBreakdownNumber').textContent = `${correct} / ${totalQ}`;
-          if ($('summaryKkmBadge')) {
-            $('summaryKkmBadge').textContent = isPass ? 'TUNTAS' : 'REMEDIAL';
-            $('summaryKkmBadge').className = isPass
-              ? 'inline-block mt-0.5 px-2.5 py-0.5 rounded-md text-xs font-extrabold bg-emerald-100 text-emerald-800'
-              : 'inline-block mt-0.5 px-2.5 py-0.5 rounded-md text-xs font-extrabold bg-amber-100 text-amber-800';
-          }
-        } else {
-          $('summaryMetricsCard')?.classList.add('hidden');
-        }
-        renderIcons();
-      };
-
-      window.exitCbtToGate = function () {
-        if (runtime.cbtTimerHandle) {
-          clearInterval(runtime.cbtTimerHandle);
-          runtime.cbtTimerHandle = null;
-        }
-        runtime.cbtSession = null;
-        $('studentCbtView')?.classList.add('hidden');
-        $('authGateView')?.classList.remove('hidden');
-        window.setAuthTab('teacher');
-        updateGlobalStatsBadges();
-      };
-
-      // =====================================================================
-      // 10. BACKUP JSON / RESET & MODAL HELPERS
-      // =====================================================================
-      window.closeModal = function (id) {
-        $(id)?.classList.add('hidden');
-      };
-
-      window.openBackupModal = function () {
-        $('backupSystemModal')?.classList.remove('hidden');
-        renderIcons();
-      };
-
-      window.downloadJsonBackup = function () {
-        const blob = new Blob([JSON.stringify(db, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `SMATECH-Backup-${new Date().toISOString().slice(0, 10)}.json`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        showToast('Cadangan JSON SMATECH berhasil diunduh.', 'success');
-      };
-
-      window.restoreJsonBackup = function (e) {
-        const file = e.target?.files?.[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = function (ev) {
-          try {
-            const parsed = JSON.parse(String(ev.target?.result || '{}'));
-            if (!Array.isArray(parsed.batches) || !Array.isArray(parsed.students)) {
-              throw new Error('Struktur JSON tidak valid');
-            }
-            db.batches = parsed.batches;
-            db.students = parsed.students;
-            db.tokens = parsed.tokens || [];
-            db.attempts = parsed.attempts || [];
-            persistDb();
-            populateAllDropdowns();
-            window.switchTeacherModule(runtime.activeModule);
-            closeModal('backupSystemModal');
-            showToast('Database SMATECH berhasil dipulihkan dari file JSON!', 'success');
-          } catch (err) {
-            showToast('Gagal memulihkan file JSON: format tidak sesuai.', 'error');
-          }
-        };
-        reader.readAsText(file);
-      };
-
-      window.resetDemoDatabase = function () {
-        const fresh = buildInitialSeedState();
-        db.batches = fresh.batches;
-        db.students = fresh.students;
-        db.tokens = fresh.tokens;
-        db.attempts = fresh.attempts;
-        persistDb();
-        populateAllDropdowns();
-        window.switchTeacherModule(runtime.activeModule);
-        closeModal('backupSystemModal');
-        showToast('Database demo dikembalikan ke kondisi awal.', 'info');
-      };
-
-      // =====================================================================
-      // 11. BOOTSTRAP ON DOMCONTENTLOADED
-      // =====================================================================
-      function bootstrapSmatech() {
-        try {
-          initBlankDraft40();
-          renderQuickTeacherCards();
-          updateGlobalStatsBadges();
-          window.populateNewTokenCode();
-
-          // Teacher manual login
-          $('teacherManualLoginForm')?.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const em = ($('teacherEmailInput')?.value || '').trim().toLowerCase();
-            const pw = ($('teacherPassInput')?.value || '').trim();
-            const found = INFORMATICS_TEACHERS.find(
-              (t) => (t.email.toLowerCase() === em || t.name.toLowerCase() === em) && t.password === pw
-            );
-            if (found) {
-              enterTeacherWorkspace(found);
-              return;
-            }
-
-            // Cek ke Google Sheets tab Users jika akun dikelola di cloud
-            if (isApiReady() && em && pw) {
-              try {
-                const pwHash = await sha256Hex(pw);
-                const cloudLogin = await smatechApi('loginGuru', { email: em, passwordHash: pwHash });
-                if (cloudLogin.ok && cloudLogin.user) {
-                  const initials = String(cloudLogin.user.nama || 'GR')
-                    .replace(/^(Pak|Bu)\s+/i, '')
-                    .split(' ')
-                    .slice(0, 2)
-                    .map((w) => w[0])
-                    .join('')
-                    .toUpperCase();
-                  enterTeacherWorkspace({
-                    id: cloudLogin.user.user_id || 'GURU-CLOUD',
-                    initials,
-                    name: cloudLogin.user.nama,
-                    email: cloudLogin.user.email,
-                    role: cloudLogin.user.role || 'Guru Informatika'
-                  });
-                  return;
-                }
-              } catch (_) {
-                // Fall through to error message
-              }
-            }
-
-            const err = $('teacherLoginErrorBox');
-            if (err) {
-              err.textContent = 'Email/username atau kata sandi tidak valid. Gunakan kartu Masuk Cepat atau sandi smanggi123.';
-              err.classList.remove('hidden');
-            }
-          });
-
+// ... existing code ... -->
           // Flush antrean hasil ujian offline saat online kembali
           flushOfflineExamQueue();
           window.addEventListener('online', flushOfflineExamQueue);
+
+          // Student CBT login & live NIS lookup
+          $('cbtNisInput')?.addEventListener('input', (e) => updateStudentLookupPreview(e.target.value));
+          $('studentCbtLoginForm')?.addEventListener('submit', handleStudentCbtAuth);
+
+          // Anti-cheat listeners in active CBT session
+          document.addEventListener('visibilitychange', () => {
+            if (document.hidden && runtime.cbtSession?.isRunning) {
+              handleAntiCheatViolation('Perpindahan Tab / Browser Disembunyikan');
+            }
+          });
+          window.addEventListener('blur', () => {
+            if (runtime.cbtSession?.isRunning) {
+              handleAntiCheatViolation('Fokus Jendela Ujian Hilang (Window Blur)');
+            }
+          });
+          document.addEventListener('contextmenu', (e) => {
+            if (runtime.cbtSession?.isRunning) e.preventDefault();
+          });
+          document.addEventListener('keydown', (e) => {
             if (!runtime.cbtSession?.isRunning) return;
             const key = String(e.key || '').toUpperCase();
             const isBlockedCombo =
