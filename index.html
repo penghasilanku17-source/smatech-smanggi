@@ -9,6 +9,9 @@
   <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
   <!-- Lucide Icons -->
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <!-- Import DOCX (mammoth) & XLSX (SheetJS) -->
+  <script src="https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
   <style type="text/tailwindcss">
     @theme {
@@ -281,7 +284,15 @@
                 class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-600"></textarea>
               <div id="pasteDiagnosticsBox" class="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-600">Belum ada teks soal yang diproses.</div>
               <div class="flex flex-wrap gap-2">
-                <button type="button" onclick="loadSample40Template()" class="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-brand-900 text-white text-xs font-bold transition">Muat Template 40 Soal</button>
+                <label class="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition cursor-pointer">
+                  Import Soal (DOCX)
+                  <input type="file" accept=".docx" onchange="importDocxFromFile(event)" class="hidden" />
+                </label>
+                <label class="px-3.5 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold transition cursor-pointer">
+                  Import Kisi-Kisi (XLSX)
+                  <input type="file" accept=".xlsx,.xls" onchange="importKisiFromFile(event)" class="hidden" />
+                </label>
+                <button type="button" onclick="loadSample40Template()" class="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-brand-900 text-white text-xs font-bold transition">Muat Template</button>
                 <button type="button" onclick="parseSmartPasteText(false)" class="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition">Validasi Soal</button>
                 <button type="button" onclick="resetInputDraft()" class="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition">Reset</button>
               </div>
