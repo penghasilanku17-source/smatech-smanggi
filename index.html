@@ -272,6 +272,20 @@
             </div>
 
             <div id="inputPanePaste" class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-5 space-y-4">
+              <div class="p-3.5 rounded-xl bg-brand-50 border border-brand-200 text-xs text-brand-900 leading-relaxed space-y-1">
+                <strong class="block">Impor langsung dari file template Anda</strong>
+                <span>Soal diisi di <code class="font-mono bg-white/70 px-1 rounded">Template_soal.docx</code> (baris <code class="font-mono">SOAL</code> + 5 baris <code class="font-mono">JAWABAN</code> A–E, kolom <code class="font-mono">Jawaban</code> = <code class="font-mono">1</code> benar / <code class="font-mono">0</code> salah). Level Kognitif diambil dari <code class="font-mono bg-white/70 px-1 rounded">Template_kisikisi.xlsx</code>.</span>
+              </div>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <label class="flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold transition cursor-pointer">
+                  <i data-lucide="file-up" class="w-4 h-4"></i> Import Soal (DOCX)
+                  <input type="file" accept=".docx" onchange="importDocxFromFile(event)" class="hidden" />
+                </label>
+                <label class="flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-sm font-bold transition cursor-pointer">
+                  <i data-lucide="table" class="w-4 h-4"></i> Import Kisi-Kisi (XLSX)
+                  <input type="file" accept=".xlsx,.xls" onchange="importKisiFromFile(event)" class="hidden" />
+                </label>
+              </div>
               <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <input id="inputBatchTitle" type="text" placeholder="Judul paket (mis. Asesmen Sumatif X)" class="md:col-span-2 px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-brand-600" />
                 <select id="inputBatchClass" class="px-3 py-2.5 rounded-xl border border-slate-300 text-sm bg-white">
@@ -280,19 +294,10 @@
                 </select>
               </div>
               <input id="inputBatchTopic" type="text" placeholder="Topik (mis. Berpikir Komputasional)" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-brand-600" />
-              <textarea id="smartPasteTextarea" rows="9" placeholder="Tempel 40 baris soal dengan format:&#10;Pertanyaan | Opsi A | Opsi B | Opsi C | Opsi D | Opsi E | Kunci(A-E) | Level(C1-C6)"
+              <textarea id="smartPasteTextarea" rows="9" placeholder="Atau tempel manual 40 baris (opsional):&#10;Pertanyaan | Opsi A | Opsi B | Opsi C | Opsi D | Opsi E | Kunci(A-E) | Level(C1-C6)"
                 class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-600"></textarea>
               <div id="pasteDiagnosticsBox" class="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-600">Belum ada teks soal yang diproses.</div>
               <div class="flex flex-wrap gap-2">
-                <label class="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition cursor-pointer">
-                  Import Soal (DOCX)
-                  <input type="file" accept=".docx" onchange="importDocxFromFile(event)" class="hidden" />
-                </label>
-                <label class="px-3.5 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold transition cursor-pointer">
-                  Import Kisi-Kisi (XLSX)
-                  <input type="file" accept=".xlsx,.xls" onchange="importKisiFromFile(event)" class="hidden" />
-                </label>
-                <button type="button" onclick="loadSample40Template()" class="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-brand-900 text-white text-xs font-bold transition">Muat Template</button>
                 <button type="button" onclick="parseSmartPasteText(false)" class="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition">Validasi Soal</button>
                 <button type="button" onclick="resetInputDraft()" class="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition">Reset</button>
               </div>
